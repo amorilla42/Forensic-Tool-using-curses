@@ -1,7 +1,7 @@
 import curses
 import os
 from curses_ui.file_browser import FileBrowser
-from forensic_core.e01_reader import choose_partition_and_offset
+from forensic_core.e01_reader import digestE01
 from utils.create_and_load_cases import CASES_DIR, crear_directorio_caso, guardar_metadata, cargar_metadata
 
 # def run_main_window(stdscr, fs):
@@ -156,13 +156,28 @@ class main_window:
 
             self.draw_header_custom("Introduce la ruta al archivo .E01")
             self.draw_footer_custom("Presiona ESC para salir")
-            curses.echo()
-            e01_path = input_win.getstr(3, 0).decode("utf-8").strip()
+            
+            input_win.clear()
+            input_win.refresh()
+            e01_path = input_win.getstr(0, 0).decode("utf-8").strip()
+
+            curses.noecho()
+            e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/portatil.E01"
             caso_dir = crear_directorio_caso(nombre)
 
             try:
-                fs, partition_number, offset = choose_partition_and_offset(e01_path)
+                fs, partition_number, offset = digestE01(e01_path,self.stdscr)
+        
+                if partition_number is None:
+                    self.stdscr.addstr(5, 0, "Selección de partición cancelada.")
+                    self.stdscr.refresh()
+                    self.stdscr.getch()
+                    return
+                self.current_image = nombre
+                self.reader = fs
+                self.selected_partition = partition_number
                 guardar_metadata(caso_dir, nombre, e01_path, partition_number, offset)
+                self.stdscr.getch()
             except Exception as e:
                 self.stdscr.addstr(5, 0, f"Error al montar la imagen: {e}")
                 self.stdscr.refresh()
@@ -183,7 +198,7 @@ class main_window:
                 self.stdscr.getch()
                 return
 
-    def seleccionar_caso_existente(stdscr):
+    def seleccionar_caso_existente(self, stdscr):
         cases = [f for f in os.listdir(CASES_DIR) if os.path.isdir(os.path.join(CASES_DIR, f))]
         if not cases:
             stdscr.addstr(0, 0, "No hay casos disponibles.")

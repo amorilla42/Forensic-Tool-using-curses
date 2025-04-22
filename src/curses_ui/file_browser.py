@@ -1,5 +1,5 @@
 import curses
-from forensic_core.e01_reader import open_e01_with_offset
+
 
 
 class FileBrowser:
