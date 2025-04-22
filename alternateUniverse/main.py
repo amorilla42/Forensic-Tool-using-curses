@@ -9,6 +9,7 @@ from createdatabase import crear_base_de_datos, insertar_file_hash, insertar_fil
 CASES_DIR = "cases"
 CASENAME = "Glask"
 
+
 def open_e01_image(e01_path):
     filenames = pyewf.glob(e01_path)
     ewf_handle = pyewf.handle()
@@ -27,6 +28,7 @@ def open_e01_image(e01_path):
             return self._ewf_handle.get_media_size()
 
     return EWFImgInfo(ewf_handle)
+
 
 
 
@@ -105,6 +107,7 @@ def abrir_fs_con_particion(img, partition_offset):
 def extraer_archivos_de_e01(e01_path, db_path, case_id):
     print("Abriendo imagen...")
     img = open_e01_image(e01_path)
+
     volume_info = pytsk3.Volume_Info(img)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -113,7 +116,7 @@ def extraer_archivos_de_e01(e01_path, db_path, case_id):
         print(f"Partición {i}: {partition.desc.decode()} (Start: {partition.start}, Length: {partition.len})")
 
         # Detectar la partición "Basic data partition" (suele ser NTFS o FAT)
-        if b"Basic data partition" in partition.desc:
+        if b"Basic data partition" in partition.desc or b"NTFS" in partition.desc or b"exFAT" in partition.desc:
             partition_offset = partition.start * 512
             print(f"Abriendo sistema de archivos en offset: {partition_offset}")
             fs_info = abrir_fs_con_particion(img, partition_offset)
@@ -136,7 +139,11 @@ if __name__ == "__main__":
     ## si no es nuevo, abrir la base de datos del caso que te pida
 
     crear_base_de_datos(f"{CASENAME}.db")
-    extraer_archivos_de_e01("portatil.E01", "alternate_universe.db", 1)
+    #extraer_archivos_de_e01("portatil.E01", "alternate_universe.db", 1)
+    extraer_archivos_de_e01("portatil.E01", f"{CASENAME}.db", 1)
+    #extraer_archivos_de_e01("win10foren.E02", f"{CASENAME}.db", 1)
+    #extraer_archivos_de_e01("win10foren.E03", f"{CASENAME}.db", 1)
+    #extraer_archivos_de_e01("win10foren.E04", f"{CASENAME}.db", 1)
     
 
 
