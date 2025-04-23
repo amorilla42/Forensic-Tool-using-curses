@@ -205,7 +205,6 @@ def digestE01(e01_path, stdscr, db_path, case_name):
                     partition_offset = partition.start * 512
                     fs_info = abrir_fs_con_particion(image, partition_offset)
                     if fs_info:
-                        # Llamar a la función que recorre los archivos
                         recorrer_archivos_recursivo(cursor, fs_info, fs_info.open_dir("/"), "/", partition.addr , case_name)
             except Exception as e:
                 continue

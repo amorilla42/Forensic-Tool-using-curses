@@ -7,6 +7,7 @@ from database.create_database import crear_base_de_datos
 
 
 class main_window:
+    """Clase principal para la interfaz de usuario de curses."""
     def __init__(self, stdscr):
         self.stdscr = stdscr
         self.reader = None
@@ -23,7 +24,7 @@ class main_window:
 
         if curses.has_colors():
             curses.start_color()
-            curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)  # Header
+            curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLUE)   # Header
             curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_WHITE)  # Body
             curses.init_pair(3, curses.COLOR_RED, curses.COLOR_BLACK)    # Error
             curses.init_pair(4, curses.COLOR_GREEN, curses.COLOR_BLACK)  # Success
