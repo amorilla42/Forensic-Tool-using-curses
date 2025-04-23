@@ -161,9 +161,6 @@ class main_window:
 
             try:
                 digestE01(e01_path,self.stdscr,db_path,nombre_caso)
-                self.stdscr.addstr(5, 0, "Imagen montada y analizada correctamente.")
-                self.stdscr.refresh()
-                self.stdscr.getch()
             except Exception as e:
                 self.stdscr.addstr(5, 0, f"Error al montar la imagen: {e}")
                 self.stdscr.refresh()

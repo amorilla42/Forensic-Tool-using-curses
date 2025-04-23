@@ -146,7 +146,6 @@ def crear_base_de_datos(path_db):
 
     conn.commit()
     conn.close()
-    print(f"Base de datos forense creada en: {path_db}")
 
 def insertar_case_info(cursor, case_name, e01_path, hash_sha256):
     cursor.execute("""

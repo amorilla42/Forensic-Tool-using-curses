@@ -1,4 +1,7 @@
+from datetime import datetime, timezone
+import hashlib
 import logging
+import os
 import sqlite3
 import pytsk3 # type: ignore
 import pyewf
@@ -27,16 +30,12 @@ def open_e01_image(e01_path):
 
     return EWFImgInfo(ewf_handle)
 
-def abrir_fs_con_particion(img, partition_offset,stdscr):
+def abrir_fs_con_particion(img, partition_offset):
     try:
         # Cargar el sistema de archivos de la partición
         fs_info = pytsk3.FS_Info(img, offset=partition_offset)
-        stdscr.addstr(0, 0, f"Sistema de archivos cargado en offset: {partition_offset}")
-        stdscr.refresh()
         return fs_info
     except Exception as e:
-        stdscr.addstr(0, 0, f"Error al abrir sistema de archivos: {e}")
-        stdscr.refresh()
         return None
 
 def get_fs_type_name(ftype):
@@ -61,15 +60,103 @@ def get_partition_label(fs_info):
         pass
     return "Sin etiqueta"
 
+def recorrer_archivos_recursivo(cursor, fs_info, dir_obj, parent_path, partition_id, case_id):
+    for entry in dir_obj:
+        if not entry.info.name.name or entry.info.name.name in [b".", b".."]:
+            continue
+
+        try:
+            name = entry.info.name.name.decode("utf-8", "ignore")
+            full_path = os.path.join(parent_path, name)
+            ext = os.path.splitext(name)[1].lower()
+            tipo = entry.info.meta.type if entry.info.meta else None
+            tipo = "dir" if tipo == pytsk3.TSK_FS_META_TYPE_DIR else "file"
+            size = entry.info.meta.size if entry.info.meta else 0
+            inode = entry.info.meta.addr if entry.info.meta else None
+
+            def get_ts(attr): return datetime.fromtimestamp(attr, timezone.utc) if attr else None
+            
+            mtime = get_ts(entry.info.meta.mtime)
+            atime = get_ts(entry.info.meta.atime)
+            ctime = get_ts(entry.info.meta.ctime)
+            crtime = get_ts(entry.info.meta.crtime)
+
+            # Extraer SHA256 si es archivo y no es gigante
+            sha256 = None
+            if tipo == "file" and size < 10 * 1024 * 1024:
+                try:
+                    f = entry.read_random(0, size)
+                    sha256 = hashlib.sha256(f).hexdigest()
+                except Exception:
+                    pass
+
+            entry_id = insertar_filesystem_entry(
+                cursor, partition_id, full_path, name, ext, tipo, size,
+                inode, mtime, atime, ctime, crtime, sha256
+            )
+
+            if sha256:
+                insertar_file_hash(cursor, entry_id, sha256)
+
+            # Insertar en línea de tiempo
+            if crtime:
+                insertar_timeline_event(cursor, case_id, "fs", entry_id, f"Archivo: {name}", crtime)
+
+            # Recursividad en carpetas
+            if tipo == "dir":
+                subdir = entry.as_directory()
+                recorrer_archivos_recursivo(cursor, fs_info, subdir, full_path, partition_id, case_id)
+
+        except Exception as e:
+            continue
+
+def calcular_hash_E01(ruta_E01, algoritmo="sha256", buffer_size=65536):
+    """
+    Calcula el hash de un archivo .E01 (EWF).
+    
+    Args:
+        ruta_ewf (str): Ruta al archivo .E01.
+        algoritmo (str): "sha256", "md5", "sha1", etc.
+        buffer_size (int): Tamaño del buffer de lectura (por defecto 64KB).
+    
+    Returns:
+        str: Hash hexadecimal del archivo.
+    """
+    # Inicializar el objeto hashlib según el algoritmo
+    if algoritmo not in hashlib.algorithms_available:
+        raise ValueError(f"Algoritmo no soportado. Usa uno de: {hashlib.algorithms_available}")
+    
+    hash_obj = hashlib.new(algoritmo)
+    
+    # Abrir el archivo E01 con pyewf
+    ewf_handle = pyewf.handle()
+    filenames = pyewf.glob(ruta_E01)
+    ewf_handle.open(filenames)
+    
+    # Leer el contenido en bloques y actualizar el hash
+    while True:
+        data = ewf_handle.read(buffer_size)
+        if not data:
+            break
+        hash_obj.update(data)
+    
+    ewf_handle.close()
+    
+    return hash_obj.hexdigest()
+
+
 def digestE01(e01_path, stdscr, db_path, case_name):
     
-    image = open_e01_image(e01_path)
 
-    volume_info = pytsk3.Volume_Info(image)
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    insertar_case_info(cursor, case_name, e01_path, "randomSha256hash")
+    insertar_case_info(cursor, case_name, e01_path, calcular_hash_E01(e01_path,"sha256"))
+    conn.commit()
+
+    image = open_e01_image(e01_path)
+
+    volume_info = pytsk3.Volume_Info(image)
 
     try:
         for i, partition in enumerate(volume_info):
@@ -81,9 +168,6 @@ def digestE01(e01_path, stdscr, db_path, case_name):
             description = partition.desc.decode(errors='ignore') if partition.desc else ""
             start_offset = partition.start
             lenght = partition.len
-            stdscr.addstr(1,0,f"Partición {i}: {description} (Start: {start_offset}, Length: {lenght})")
-            stdscr.refresh()
-            stdscr.getch()
             # Solo intentamos analizar si no es espacio no asignado
             if b"Unallocated" not in partition.desc:
                 try:
@@ -101,22 +185,35 @@ def digestE01(e01_path, stdscr, db_path, case_name):
                 except Exception as e:
                     fs_type = f"Unknown"
             # Insertar en la base de datos
-            logging.info(f"Insertando información de la partición en la base de datos: "
-                         f"Descripción: {description}, Inicio: {start_offset}, Longitud: {lenght}, "
-                         f"Offset: {partition_offset}, Tipo FS: {fs_type}, Etiqueta: {label}, "
-                         f"Tamaño de bloque: {block_size}, Conteo de bloques: {block_count}")
             insertar_partition_info(
                 cursor, case_name, description, start_offset, lenght, partition_offset, fs_type, label,
                 block_size, block_count
             )
 
-            # Mostrar progreso en pantalla
-            progress = f"Procesando partición {i+1}: Offset 0x{partition_offset:08X} - {fs_type}"
-            stdscr.addstr(i+1, 0, progress[:stdscr.getmaxyx()[1]-1])
-            stdscr.refresh()
-
         conn.commit()
         conn.close()
+
+
+
+        # Reabrir la conexión para recorrer archivos
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        for i, partition in enumerate(volume_info):
+            try:
+                # Detectar la partición "Basic data partition" (suele ser NTFS o FAT)
+                if b"Basic data partition" in partition.desc or b"NTFS" in partition.desc or b"exFAT" in partition.desc:
+                    partition_offset = partition.start * 512
+                    fs_info = abrir_fs_con_particion(image, partition_offset)
+                    if fs_info:
+                        # Llamar a la función que recorre los archivos
+                        recorrer_archivos_recursivo(cursor, fs_info, fs_info.open_dir("/"), "/", partition.addr , case_name)
+            except Exception as e:
+                continue
+        
+        conn.commit()
+        conn.close()
+
+
 
     except Exception as e:
         stdscr.addstr(0, 0, f"Error procesando imagen: {str(e)}")
