@@ -17,13 +17,16 @@ def crear_base_de_datos(path_db):
     -- Tabla de particiones encontradas
     CREATE TABLE IF NOT EXISTS partition_info (
         partition_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        case_id INTEGER NOT NULL,
+        case_name INTEGER NOT NULL,
+        description TEXT NOT NULL,
+        start_offset INTEGER NOT NULL,
+        length INTEGER NOT NULL,
         partition_offset INTEGER NOT NULL,
         fs_type TEXT,
         label TEXT,
         block_size INTEGER,
         block_count INTEGER,
-        FOREIGN KEY (case_id) REFERENCES case_info(case_id)
+        FOREIGN KEY (case_name) REFERENCES case_info(case_name)
     );
 
     -- Entradas del sistema de archivos
@@ -152,12 +155,14 @@ def insertar_case_info(cursor, case_name, e01_path, hash_sha256):
     """, (case_name, e01_path, hash_sha256))
     return cursor.lastrowid
 
-def insertar_partition_info(cursor, case_id, partition_offset, fs_type, label,
+
+
+def insertar_partition_info(cursor, case_id, description, start_offset, length, partition_offset, fs_type, label,
                             block_size, block_count):
     cursor.execute("""
-    INSERT INTO partition_info (case_id, partition_offset, fs_type, label, block_size, block_count)
-    VALUES (?, ?, ?, ?, ?, ?)
-    """, (case_id, partition_offset, fs_type, label, block_size, block_count))
+    INSERT INTO partition_info (case_name, description, start_offset, length, partition_offset, fs_type, label, block_size, block_count)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (case_id, description, start_offset, length, partition_offset, fs_type, label, block_size, block_count))
     return cursor.lastrowid
 
 

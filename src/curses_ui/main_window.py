@@ -3,19 +3,8 @@ import os
 from curses_ui.file_browser import FileBrowser
 from forensic_core.e01_reader import digestE01
 from utils.create_and_load_cases import CASES_DIR, crear_directorio_caso, guardar_metadata, cargar_metadata
+from database.create_database import crear_base_de_datos
 
-# def run_main_window(stdscr, fs):
-#     h, w = stdscr.getmaxyx()
-#     browser = FileBrowser(stdscr, 2, 0, h - 3, w, fs)
-#     browser.display()
-#
-#     while True:
-#         key = stdscr.getch()
-#         browser.handle_input(key)
-
-
-
-##########################################################################
 
 class main_window:
     def __init__(self, stdscr):
@@ -150,7 +139,7 @@ class main_window:
 
             curses.echo()
 
-            nombre = input_win.getstr(0, 0).decode("utf-8")
+            nombre_caso = input_win.getstr(0, 0).decode("utf-8")
             self.panel.clear()
             self.panel.refresh()
 
@@ -163,20 +152,17 @@ class main_window:
 
             curses.noecho()
             e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/portatil.E01"
-            caso_dir = crear_directorio_caso(nombre)
+            caso_dir = crear_directorio_caso(nombre_caso)
+
+            db_path = os.path.join(caso_dir, f"{nombre_caso}.db")
+            crear_base_de_datos(db_path)
+
+
 
             try:
-                fs, partition_number, offset = digestE01(e01_path,self.stdscr)
-        
-                if partition_number is None:
-                    self.stdscr.addstr(5, 0, "Selección de partición cancelada.")
-                    self.stdscr.refresh()
-                    self.stdscr.getch()
-                    return
-                self.current_image = nombre
-                self.reader = fs
-                self.selected_partition = partition_number
-                guardar_metadata(caso_dir, nombre, e01_path, partition_number, offset)
+                digestE01(e01_path,self.stdscr,db_path,nombre_caso)
+                self.stdscr.addstr(5, 0, "Imagen montada y analizada correctamente.")
+                self.stdscr.refresh()
                 self.stdscr.getch()
             except Exception as e:
                 self.stdscr.addstr(5, 0, f"Error al montar la imagen: {e}")
@@ -230,6 +216,7 @@ class main_window:
                 return None
 
     def run(self):
+        
         self.init_panel()
 
         while True:
