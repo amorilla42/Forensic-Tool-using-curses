@@ -1,17 +1,17 @@
 import curses
+from utils.singleton import Singleton
 
 KEY_ENTER = 10
-KEY_SCAPE = 27
 
-class UIHandler:
+class UIHandler(metaclass=Singleton):
     """Clase con la lógica de la Interfaz Gráfica"""
 
-    def __init__(self,stdscr):
+    def __init__(self, stdscr):
         self.stdscr = stdscr
         self._init_ui()
     
     def _init_ui(self):
-        curses.curs_set(0)
+        curses.curs_set(0) # Ocultar cursor
         curses.noecho()
         curses.cbreak()
         self.stdscr.keypad(True)
@@ -48,96 +48,3 @@ class UIHandler:
 
     def draw_footer_init(self, message="", is_error=False):
         self.draw_footer(" ↑↓: Elegir opcion | ENTER: Seleccionar | ESC: Salir", message, is_error)
-
-    def draw_menu(self, title, options=[]):
-        curses.curs_set(0)  # Ocultar cursor
-        current_row = 0
-        height, width = self.stdscr.getmaxyx()
-        self.stdscr.clear()
-        self.stdscr.refresh()
-        
-        MENU_INSTRUCTIONS = "↑/↓: Navegar | Enter: Seleccionar | ESC: Salir"
-
-        # Calcular el ancho necesario (máximo entre el ancho del texto más largo y el mínimo deseado)
-        max_option_width = max(len(p) for p in options) if options else 20
-        max_option_width = max(max_option_width, len(MENU_INSTRUCTIONS) + 4 )  # Ancho entre 40 y ancho terminal-4
-        box_width = min(max(max_option_width + 4, 40), width - 4)  # Ancho entre 40 y ancho terminal-4
-        
-        # Calcular altura necesaria
-        box_height = min(len(options) + 4, height - 4)  # N° particiones + bordes + título
-        
-        # Posición centrada del recuadro
-        start_y = max(1, (height - box_height) // 2)
-        start_x = max(1, (width - box_width) // 2)
-        
-        # Crear ventana
-        win = curses.newwin(box_height, box_width, start_y, start_x)
-        win.bkgd(' ', curses.color_pair(1))
-        win.box()
-        
-        
-        # Margen izquierdo fijo para el texto
-        TEXT_MARGIN = 2
-        
-        while True:
-            win.clear()
-            win.box()  # Redibujar bordes
-
-            # Título centrado
-            win.addstr(0, (box_width - len(title)) // 2, title)
-
-            # Dibujar cada partición alineada a la izquierda
-            for idx, part in enumerate(options):
-                y = idx + 2  # 2 para dejar espacio para el borde y título
-                if y >= box_height - 1:  # No sobrepasar el borde inferior
-                    break
-                    
-                try:
-                    if idx == current_row:
-                        win.addstr(y, TEXT_MARGIN, part.ljust(box_width - TEXT_MARGIN - 1), curses.A_REVERSE)
-                    else:
-                        win.addstr(y, TEXT_MARGIN, part.ljust(box_width - TEXT_MARGIN - 1))
-                except curses.error:
-                    continue
-            
-            # Instrucciones al pie
-            
-            try:
-                win.addstr(box_height-1, (box_width - len(MENU_INSTRUCTIONS)) // 2, MENU_INSTRUCTIONS)
-            except curses.error:
-                pass
-            
-            win.refresh()
-            
-            key = self.stdscr.getch()
-            
-            if key == curses.KEY_UP and current_row > 0:
-                current_row -= 1
-            elif key == curses.KEY_DOWN and current_row < len(options) - 1:
-                current_row += 1
-            elif key == curses.KEY_ENTER or key in [10, 13]:
-                win.clear()
-                win.refresh()
-                self.stdscr.clear()
-                self.stdscr.refresh()
-                return current_row
-            elif key == KEY_SCAPE:
-                win.clear()
-                win.refresh()
-                self.stdscr.clear()
-                self.stdscr.refresh()
-                return None
-
-    def draw_centered_input(self):
-        height, width = self.stdscr.getmaxyx()
-        input_win = curses.newwin(1, width // 2, height // 2, (width // 4))
-        input_win.bkgd(' ', curses.color_pair(2))
-        input_win.refresh()
-
-        curses.echo()
-        user_input = input_win.getstr(0, 0).decode("utf-8")
-        curses.noecho()
-        input_win.clear()
-        input_win.refresh()
-
-        return user_input

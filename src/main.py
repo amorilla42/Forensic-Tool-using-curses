@@ -6,8 +6,8 @@ from curses_ui.ui_handler import UIHandler
 
 def safe_main(stdscr):
     # Initialize the main window
-    ui = UIHandler(stdscr)
-    ForensicTools(ui).run()
+    UIHandler(stdscr)
+    ForensicTools().run()
 
 if __name__ == "__main__":
     try:
