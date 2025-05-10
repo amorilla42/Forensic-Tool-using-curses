@@ -1,5 +1,6 @@
 import curses
 import os
+import sqlite3
 from curses_ui.file_browser import FileBrowser
 
 from curses_ui.awesome_menu import AwesomeMenu
@@ -8,6 +9,7 @@ from curses_ui.awesome_layout import AwesomeLayout
 from curses_ui.awesome_loader import CircleLoader
 
 from curses_ui.ui_handler import UIHandler
+from forensic_core.search_files import search_files
 from forensic_core.e01_reader import digestE01
 from utils.create_and_load_cases import CASES_DIR, crear_directorio_caso, guardar_metadata, cargar_metadata
 from database.create_database import crear_base_de_datos
@@ -16,6 +18,10 @@ from database.create_database import crear_base_de_datos
 class ForensicTools:
     def __init__(self):
         self.ui = UIHandler()
+        self.nombre_caso = None
+        self.db_path = None
+        self.caso_dir = None
+        self.e01_path = None
 
     def new_case(self):
         layout = AwesomeLayout()
@@ -24,21 +30,24 @@ class ForensicTools:
         layout.change_footer("Presiona ESC para salir")
 
         
-        nombre_caso = AwesomeInput(layout.body_win).render()
+        self.nombre_caso = AwesomeInput(layout.body_win).render()
 
         layout.change_header("Introduce la ruta al archivo .E01")
         layout.change_footer("Presiona ESC para salir")
 
-        e01_path = AwesomeInput(layout.body_win).render()
-        e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/portatil.E01"
-        caso_dir = crear_directorio_caso(nombre_caso)
+        self.e01_path = AwesomeInput(layout.body_win).render()
+        self.e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/portatil.E01"
+        self.caso_dir = crear_directorio_caso(self.nombre_caso)
 
-        db_path = os.path.join(caso_dir, f"{nombre_caso}.db")
-        crear_base_de_datos(db_path)
+        self.db_path = os.path.join(self.caso_dir, f"{self.nombre_caso}.db")
+        crear_base_de_datos(self.db_path)
+
+        # mostrar que esta cargando
         x = CircleLoader(layout.body_win)
         x.render()
+        
         try:
-            digestE01(e01_path, self.ui.stdscr, db_path, nombre_caso)
+            digestE01(self.e01_path, self.ui.stdscr, self.db_path, self.nombre_caso)
             x.clear()
         except Exception as e:
             self.ui.stdscr.addstr(5, 0, f"Error al montar la imagen: {e}")
@@ -49,15 +58,19 @@ class ForensicTools:
         caso_seleccionado = self.seleccionar_caso_existente()
         if caso_seleccionado is None:
             return
-        caso_dir = os.path.join(CASES_DIR, caso_seleccionado)
-        try:
-            metadata = cargar_metadata(caso_dir)
-            fs = self.open_e01_with_offset(metadata["e01_path"], metadata["partition_offset"])
-        except Exception as e:
-            self.ui.stdscr.addstr(5, 0, f"Error al abrir el caso: {e}")
-            self.ui.stdscr.refresh()
-            self.ui.stdscr.getch()
-            return
+        self.caso_dir = os.path.join(CASES_DIR, caso_seleccionado)
+        self.db_path = os.path.join(self.caso_dir, f"{caso_seleccionado}.db")
+        self.nombre_caso = caso_seleccionado
+        
+        #cargar base de datos
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT e01_path FROM case_info WHERE case_name = ?", (self.nombre_caso,))
+        self.e01_path = cursor.fetchone()[0]
+        conn.close()
+
+
+        
 
     def seleccionar_caso_existente(self):
         cases = [f for f in os.listdir(CASES_DIR) if os.path.isdir(os.path.join(CASES_DIR, f))]
@@ -100,7 +113,7 @@ class ForensicTools:
             elif key == curses.KEY_F3:
                 self.analyze_image()
             elif key == curses.KEY_F5:
-                self.search_image()
+                search_files(self.db_path)
             elif key == curses.KEY_F6:
                 self.export_image()
             else:
