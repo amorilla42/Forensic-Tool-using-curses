@@ -56,13 +56,21 @@ def search_files(db_path):
         path = cursor.fetchall()
 
         conn.close()
+
+        metadata2, content_lines2 = get_info_file2(
+            ewf_path=path[0][0],
+            partition_offset=partition_offset_bytes,
+            path=selected_file[2],
+            layout=layout
+        )
+        
         metadata, content_lines = get_info_file(
             ewf_path=path[0][0],
             partition_offset=partition_offset_bytes,
             inode=selected_file[7],
             layout=layout
         )
-        FileViewerPanel(metadata, content_lines, layout.body_win).render()
+        FileViewerPanel(metadata2, content_lines2, layout.body_win).render()
         layout.clear()
         layout.change_header(f"Busqueda: {query}")
         layout.change_footer("Presiona ESC para salir")
@@ -107,7 +115,33 @@ def extract_file_info(img, partition_offset, inode, layout):
         layout.change_footer(f"Error al extraer el archivo: {str(e)}")
         return None, None
 
-
+def extract_file_info2(img, partition_offset, path, layout):
+    try:
+        fs = pytsk3.FS_Info(img, offset=partition_offset)
+        file_obj = fs.open(path)
+        meta = file_obj.info.meta
+        if meta is None or meta.size is None:
+            raise ValueError("No se puede obtener el contenido del archivo: tamaño no definido.")
+        content = b""
+        size = meta.size
+        if not isinstance(size, int):  # Verificar que size es un entero
+            raise ValueError("Tamaño del archivo no es válido.")
+        if size > 10 * 1024 * 1024:
+            raise ValueError("Archivo muy grande para mostrarlo por pantalla.")
+        offset = 0
+        while offset < size:
+            chunk = file_obj.read_random(offset, min(4096, size - offset))
+            if not isinstance(chunk, bytes):
+                raise ValueError(f"Esperado un objeto 'bytes', pero se encontró {type(chunk)}.")
+            if not chunk:
+                break
+            content += chunk
+            offset += len(chunk)
+        return file_obj, content
+    except Exception as e:
+        layout.change_footer(f"Error al extraer el archivo: {str(e)}")
+        return None, None
+    
 
 def get_file_metadata(file_obj):
     meta = file_obj.info.meta
@@ -119,8 +153,8 @@ def get_file_metadata(file_obj):
         "Nombre": name,
         "Inode": meta.addr,
         "Tama\u00f1o": meta.size,
-        "Creaci\u00f3n": str(meta.crtime),
-        "Modificaci\u00f3n": str(meta.mtime),
+        "Creacion": str(meta.crtime),
+        "Modificacion": str(meta.mtime),
         "Acceso": str(meta.atime),
         "Cambio": str(meta.ctime),
         "Modo": hex(meta.mode),
@@ -148,3 +182,21 @@ def get_info_file(ewf_path, partition_offset, inode, layout):
     content_lines = prepare_content_lines(content)
     return metadata, content_lines
 
+def get_info_file2(ewf_path, partition_offset, path, layout):
+    img = open_e01_image(ewf_path)
+    file_obj, content = extract_file_info2(img, partition_offset, path, layout)
+    
+    if file_obj is None:
+        layout.change_footer("No se pudo abrir el archivo.")
+        return {}, []
+    #try:
+    #    content = file_obj.read_random(0, file_obj.info.meta.size)
+    #except Exception as e:
+    #    layout.change_footer(f"Error al leer el archivo: {str(e)}")
+    #    return {}, []
+    if content is None:
+        layout.change_footer("No se pudo leer el contenido del archivo.")
+        return {}, []
+    metadata = get_file_metadata(file_obj)
+    content_lines = prepare_content_lines(content)
+    return metadata, content_lines

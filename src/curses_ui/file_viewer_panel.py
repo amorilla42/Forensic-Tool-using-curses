@@ -1,5 +1,6 @@
 import curses
 from .renderizable import Renderizable
+from utils.text_sanitizer import TextSanitizer
 
 class FileViewerPanel(Renderizable):
     def __init__(self, metadata: dict, content_lines: list[str], win=None):
@@ -18,7 +19,7 @@ class FileViewerPanel(Renderizable):
             self.metadatamaslarga = 0
         
         if content_lines:
-            self.lineamaslarga = max(len(str(line)) for line in content_lines)
+            self.lineamaslarga = max(len(TextSanitizer.clean(line)) for line in content_lines)  # Longitud máxima de la línea en contenido
         else:
             self.lineamaslarga = 0
     
@@ -109,7 +110,7 @@ class FileViewerPanel(Renderizable):
         # Mostrar contenido
         visible_content = self.content_lines[self.right_scroll_y:self.right_scroll_y + h - 2]
         for i, line in enumerate(visible_content):
-            visible_line = line[self.right_scroll_x:self.right_scroll_x + (w - mid_x - 2)]
+            visible_line = TextSanitizer.clean(line)[self.right_scroll_x:self.right_scroll_x + (w - mid_x - 2)]
             try:
                 win_right.addstr(i, 0, visible_line)
             except curses.error:
