@@ -38,6 +38,10 @@ class FileViewerPanel(Renderizable):
                 self.win.clear()
                 self.win.refresh()
                 break
+            elif key == 10:  # Enter
+                self.win.clear()
+                self.win.refresh()
+                return True
             elif self.active_win == "left":
                 if key == curses.KEY_DOWN and self.left_scroll < len(self.metadata) - 1:
                     self.left_scroll += 5
@@ -68,14 +72,14 @@ class FileViewerPanel(Renderizable):
             if redraw:
                 self._draw()
 
-        return
+        return False
 
     def _draw(self):
         h, w = self.height, self.width
         mid_x = w // 2
-
-        box_left = curses.newwin(h, mid_x, 0, 0)
-        box_right = curses.newwin(h, w - mid_x, 0, mid_x)
+        topmargin = 3
+        box_left = curses.newwin(h, mid_x, topmargin, 0)
+        box_right = curses.newwin(h, w - mid_x, topmargin, mid_x)
 
         box_left.box()
         box_right.box()
@@ -107,7 +111,7 @@ class FileViewerPanel(Renderizable):
             except curses.error:
                 pass
 
-        # Mostrar contenido
+        # Mostrar contenido con desplazamiento vertical y horizontal
         visible_content = self.content_lines[self.right_scroll_y:self.right_scroll_y + h - 2]
         for i, line in enumerate(visible_content):
             visible_line = TextSanitizer.clean(line)[self.right_scroll_x:self.right_scroll_x + (w - mid_x - 2)]

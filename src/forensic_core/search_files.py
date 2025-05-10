@@ -8,6 +8,8 @@ from curses_ui.file_viewer_panel import FileViewerPanel
 import pytsk3
 import pyewf
 
+from forensic_core.export_file import exportar_archivo
+
 
 
 def search_files(db_path):
@@ -15,8 +17,8 @@ def search_files(db_path):
     cursor = conn.cursor()
     layout = AwesomeLayout()
     layout.render()
-    layout.change_header("Introduce el nombre del archivo a buscar")
-    layout.change_footer("Presiona ESC para salir")
+    layout.change_header("Introduce el parametro de busqueda")
+    layout.change_footer("Presiona ENTER para buscar, ESC para salir")
 
     query = AwesomeInput(layout.body_win).render()
     # TODO: MEJORAR LA BUSQUEDA QUE COMPARE Y HAGA BUSQUEDA EN TODOS LOS CAMPOS DE FILESISTEM_ENTRY
@@ -26,7 +28,8 @@ def search_files(db_path):
     if not results:
         print("No se encontraron resultados.")
         return
-    
+    layout.change_header(f"Busqueda: {query}")
+    layout.change_footer("Presiona ENTER para seleccionar, ESC para salir")
     menu = AwesomeMenu(
         title="Resultados de la busqueda, presiona ENTER para seleccionar, ESC para salir",
         options=[f"Nombre: {result[3]}, Ruta: {result[2]}, Tamaño: {result[6]}" for result in results],
@@ -37,7 +40,7 @@ def search_files(db_path):
     while selected is not None:
         selected_file = results[selected]
         layout.change_header(f"Seleccionaste: {selected_file[3]}")
-        layout.change_footer("Presiona ESC para salir")
+        layout.change_footer("Presiona TAB para alternar entre ventanas, ↑/↓ ←/→  para desplazamiento de texto, ENTER para exportar archivo, ESC para salir")
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
@@ -63,14 +66,20 @@ def search_files(db_path):
             path=selected_file[2],
             layout=layout
         )
-        
+        #####
         metadata, content_lines = get_info_file(
             ewf_path=path[0][0],
             partition_offset=partition_offset_bytes,
             inode=selected_file[7],
             layout=layout
         )
-        FileViewerPanel(metadata2, content_lines2, layout.body_win).render()
+        extraer = FileViewerPanel(metadata2, content_lines2, layout.body_win).render()
+        if extraer:
+            exportar_archivo(
+                ewf_path=path[0][0], 
+                partition_offset=partition_offset_bytes, 
+                path=selected_file[2]
+            )
         layout.clear()
         layout.change_header(f"Busqueda: {query}")
         layout.change_footer("Presiona ESC para salir")

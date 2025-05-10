@@ -184,3 +184,5 @@ cython_debug/
 *.E03
 
 *.E04
+
+exported_files/
