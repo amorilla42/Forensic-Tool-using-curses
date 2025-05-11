@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from curses_ui.search_files_menu import SearchFilesMenu
 from forensic_core.e01_reader import open_e01_image
 from curses_ui.awesome_layout import AwesomeLayout
 from curses_ui.awesome_input import AwesomeInput
@@ -30,11 +31,18 @@ def search_files(db_path):
         return
     layout.change_header(f"Busqueda: {query}")
     layout.change_footer("Presiona ENTER para seleccionar, ESC para salir")
+    '''
     menu = AwesomeMenu(
         title="Resultados de la busqueda, presiona ENTER para seleccionar, ESC para salir",
-        options=[f"Nombre: {result[3]}, Ruta: {result[2]}, Tamaño: {result[6]}" for result in results],
+        options=[f"{result[3]:<30}  {result[2]:<130}  {result[6]:<10}" for result in results],
         win=layout.body_win
-    )
+    )'''
+
+    menu = SearchFilesMenu(
+        title="Resultados de la busqueda, presiona ENTER para seleccionar, ESC para salir",
+        options=[f"{result[3]} ({result[6]} bytes)" for result in results],
+        info=[result[2] for result in results],
+        win=layout.body_win)
     selected = menu.render()
     
     while selected is not None:
@@ -44,7 +52,7 @@ def search_files(db_path):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        
+        #TODO LA BASE DE DATOS LAS PARTICIONES ESTAN CON ID 1 MENOS DE LO QUE DEBERIA
         cursor.execute("SELECT block_size FROM partition_info WHERE partition_id = ?", (selected_file[1]+1,))
         block_size = cursor.fetchone()[0]
 
