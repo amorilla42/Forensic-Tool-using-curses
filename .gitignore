@@ -186,3 +186,5 @@ cython_debug/
 *.E04
 
 exported_files/
+
+cases/

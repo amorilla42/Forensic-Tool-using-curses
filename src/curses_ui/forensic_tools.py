@@ -9,6 +9,7 @@ from curses_ui.awesome_layout import AwesomeLayout
 from curses_ui.awesome_loader import CircleLoader
 
 from curses_ui.ui_handler import UIHandler
+from forensic_core.artifacts.registry.registry_analyzer import registry_analyzer
 from forensic_core.search_files import search_files
 from forensic_core.e01_reader import digestE01
 from utils.create_and_load_cases import CASES_DIR, crear_directorio_caso, guardar_metadata, cargar_metadata
@@ -99,7 +100,7 @@ class ForensicTools:
 
         while True:
             self.ui.draw_header("ANALIZADOR FORENSE E01")
-            self.ui.draw_footer("F1: Ayuda | F2: Cargar imagen | F3: Analizar | F5: Buscar | F6: Exportar | ESC: Salir")       
+            self.ui.draw_footer("F1: Ayuda | F2: Cargar imagen | F3: Analizar Registros | F5: Buscar | F6: Exportar | ESC: Salir")       
 
             key = self.ui.stdscr.getch()
             if key == 27: # Escape key
@@ -110,10 +111,10 @@ class ForensicTools:
                 self.ui.stdscr.getch()
             elif key == curses.KEY_F2:
                 self.load_image()
-            elif key == curses.KEY_F3:
-                self.analyze_image()
+            elif key == ord('a'):    #####curses.KEY_F3:
+                registry_analyzer(self.db_path, self.caso_dir)
             elif key == curses.KEY_F5:
-                search_files(self.db_path)
+                search_files(self.db_path, self.caso_dir)
             elif key == curses.KEY_F6:
                 self.export_image()
             else:

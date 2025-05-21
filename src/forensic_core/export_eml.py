@@ -3,11 +3,11 @@ from email import policy
 from email.parser import BytesParser
 
 
-BASE_DIR_EXPORT = "../exported_files"
+BASE_DIR_EXPORT = "exported_files"
 
-def export_eml(file_entry, size, offset, chunk_size):
+def export_eml(case_dir, file_entry, size, offset, chunk_size):
     nombre_base = file_entry.info.name.name.decode("utf-8", errors="ignore")
-    carpeta_destino = os.path.join(BASE_DIR_EXPORT, nombre_base)
+    carpeta_destino = os.path.join(case_dir, BASE_DIR_EXPORT, nombre_base)
     os.makedirs(carpeta_destino, exist_ok=True)
 
     output_path = os.path.join(carpeta_destino, nombre_base)

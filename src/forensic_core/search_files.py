@@ -13,7 +13,7 @@ from forensic_core.export_file import exportar_archivo
 
 
 
-def search_files(db_path):
+def search_files(db_path, case_dir):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     layout = AwesomeLayout()
@@ -23,7 +23,7 @@ def search_files(db_path):
 
     query = AwesomeInput(layout.body_win).render()
     # TODO: MEJORAR LA BUSQUEDA QUE COMPARE Y HAGA BUSQUEDA EN TODOS LOS CAMPOS DE FILESISTEM_ENTRY
-    cursor.execute("SELECT * FROM filesystem_entry WHERE name LIKE ?", ('%' + query + '%',))
+    cursor.execute("SELECT * FROM filesystem_entry WHERE type !='dir' AND name LIKE ?", ('%' + query + '%',))
     results = cursor.fetchall()
     conn.close()
     if not results:
@@ -84,6 +84,7 @@ def search_files(db_path):
         extraer = FileViewerPanel(metadata2, content_lines2, layout.body_win).render()
         if extraer:
             exportar_archivo(
+                case_dir=case_dir,
                 ewf_path=path[0][0], 
                 partition_offset=partition_offset_bytes, 
                 path=selected_file[2]

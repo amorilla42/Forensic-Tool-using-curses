@@ -2,7 +2,7 @@ import os
 import json
 import hashlib
 
-CASES_DIR = "cases"
+CASES_DIR = "../cases"
 
 def calcular_sha256(path):
     hash_sha256 = hashlib.sha256()
