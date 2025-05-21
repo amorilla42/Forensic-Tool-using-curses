@@ -1,9 +1,10 @@
 from Registry import Registry
 import os
 import pytsk3
+from forensic_core.artifacts.registry.system_hive import extraer_system
 from forensic_core.e01_reader import open_e01_image
 import sqlite3
-
+from pathlib import Path
 
 #exportar todos los registros en temp
 BASE_DIR_EXPORT = "temp"
@@ -48,7 +49,7 @@ def exportar_hives_sistema(db_path, caso_dir):
             "SELECT partition_offset from partition_info WHERE partition_id = ?", (results[0][1]+1,)
         ).fetchone()[0]
         path = cursor.execute("SELECT e01_path FROM case_info").fetchall()
-        exportar_archivo(
+        exportar_registro(
             caso_dir= caso_dir,
             ewf_path=path[0][0],
             partition_offset=partition_offset_sectors,
@@ -65,7 +66,7 @@ def exportar_hives(ewf_path, partition_offset):
 
 
 
-def exportar_archivo(caso_dir, ewf_path, partition_offset, path):
+def exportar_registro(caso_dir, ewf_path, partition_offset, path):
 
     img = open_e01_image(ewf_path)
     fs = pytsk3.FS_Info(img, offset=partition_offset)
@@ -91,11 +92,25 @@ def exportar_archivo(caso_dir, ewf_path, partition_offset, path):
             offset += len(data)
 
 
-def analizar_hives_sistema():
-    return
+def obtener_archivos_en_directorio(path):
+    return [str(archivo) for archivo in Path(path).iterdir() if archivo.is_file()]
+
+def analizar_hives_sistema(hive_path, db_path):
+    archivos = obtener_archivos_en_directorio(hive_path)
+    for archivo in archivos:
+        if archivo.endswith("SYSTEM"):
+            extraer_system(db_path, archivo)
+            # Aquí puedes agregar la lógica para analizar el archivo .reg
+            pass
+        elif archivo.endswith(".hive"):
+            # Aquí puedes agregar la lógica para analizar el archivo .hive
+            pass
+
+
+    
 
 
 
 def registry_analyzer(db_path, caso_dir):
     exportar_hives_sistema(db_path, caso_dir)
-    analizar_hives_sistema()
+    analizar_hives_sistema(os.path.join(caso_dir, BASE_DIR_EXPORT), db_path)
