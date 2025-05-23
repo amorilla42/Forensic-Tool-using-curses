@@ -33,62 +33,7 @@ def extraer_system(db_path, hive_path):
             return dt.strftime('%Y-%m-%d %H:%M:%S')
         return None
 
-    def fetch_system_info(db_path, entry_id):
-        """
-        Obtiene la info del SYSTEM para un entry_id dado (relacionado con el archivo SYSTEM).
-        
-        Devuelve un dict con:
-        - last_boot_time (str o None)
-        - services (lista de tuplas)
-        - usb_devices (lista de tuplas)
-        - power_schemes (lista de tuplas)
-        """
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-
-        # 1) last_boot_time
-        cursor.execute("""
-            SELECT last_boot_time FROM system_info WHERE entry_id = ?
-        """, (entry_id,))
-        row = cursor.fetchone()
-        last_boot_time = row[0] if row else None
-
-        # 2) servicios
-        cursor.execute("""
-            SELECT service_name, start_type, service_type, image_path, display_name
-            FROM system_services
-            WHERE entry_id = ?
-            ORDER BY service_name
-        """, (entry_id,))
-        services = cursor.fetchall()
-
-        # 3) dispositivos USB
-        cursor.execute("""
-            SELECT device_class, device_id, friendly_name, device_desc
-            FROM usb_devices
-            WHERE entry_id = ?
-            ORDER BY friendly_name
-        """, (entry_id,))
-        usb_devices = cursor.fetchall()
-
-        # 4) esquemas de energía
-        cursor.execute("""
-            SELECT scheme_name, friendly_name
-            FROM power_schemes
-            WHERE entry_id = ?
-            ORDER BY scheme_name
-        """, (entry_id,))
-        power_schemes = cursor.fetchall()
-
-        conn.close()
-
-        return {
-            'last_boot_time': last_boot_time,
-            'services': services,
-            'usb_devices': usb_devices,
-            'power_schemes': power_schemes,
-        }
-    
+   
     def get_system_info_data(db_path):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()

@@ -1,13 +1,20 @@
 from Registry import Registry
 import os
 import pytsk3
+from curses_ui.awesome_layout import AwesomeLayout
+from curses_ui.registry_viewer import RegistryViewerPanel
+from forensic_core.artifacts.registry.sam_hive import extraer_sam
 from forensic_core.artifacts.registry.system_hive import extraer_system
 from forensic_core.e01_reader import open_e01_image
 import sqlite3
 from pathlib import Path
 
+
+
+
 #exportar todos los registros en temp
-BASE_DIR_EXPORT = "temp"
+BASE_DIR_EXPORT_TEMP = "temp"
+BASE_DIR_EXPORT = "exported_files"
 
 '''
 System32/config/SYSTEM	                    SYSTEM	        Información del arranque, controladores
@@ -95,16 +102,48 @@ def exportar_registro(caso_dir, ewf_path, partition_offset, path):
 def obtener_archivos_en_directorio(path):
     return [str(archivo) for archivo in Path(path).iterdir() if archivo.is_file()]
 
-def analizar_hives_sistema(hive_path, db_path):
+def analizar_hives_sistema(hive_path, export_path, db_path):
     archivos = obtener_archivos_en_directorio(hive_path)
+    systempath = os.path.join(hive_path, "SYSTEM")
+    
+    
+
+    layout = AwesomeLayout()
+    layout.render()
+    layout.change_header("Registros del Sistema")
+    layout.change_footer("Las risas")
+    panel = RegistryViewerPanel(layout.body_win, systempath, export_path)
+    panel.render()
+    layout.body_win.keypad(True)
+    while True:
+        panel.render()
+        key = layout.body_win.getch()
+        if key  == ord("q"):
+            break
+        panel.handle_input(key)
+    
+    
     for archivo in archivos:
         if archivo.endswith("SYSTEM"):
             extraer_system(db_path, archivo)
             # Aquí puedes agregar la lógica para analizar el archivo .reg
             pass
-        elif archivo.endswith(".hive"):
-            # Aquí puedes agregar la lógica para analizar el archivo .hive
+        elif archivo.endswith("SOFTWARE"):
+            # Aquí puedes agregar la lógica para analizar el archivo .reg
             pass
+        elif archivo.endswith("SAM"):
+            extraer_sam(sam_hive_path = archivo, system_hive_path = systempath, db_path = db_path)
+            pass
+        elif archivo.endswith("SECURITY"):
+            # Aquí puedes agregar la lógica para analizar el archivo .reg
+            pass
+        elif archivo.endswith("DEFAULT"):
+            # Aquí puedes agregar la lógica para analizar el archivo .reg
+            pass
+        elif archivo.endswith(".hive"):
+            # Aquí puedes agregar la lógica para analizar el archivo .reg
+            pass
+
 
 
     
@@ -113,4 +152,4 @@ def analizar_hives_sistema(hive_path, db_path):
 
 def registry_analyzer(db_path, caso_dir):
     exportar_hives_sistema(db_path, caso_dir)
-    analizar_hives_sistema(os.path.join(caso_dir, BASE_DIR_EXPORT), db_path)
+    analizar_hives_sistema(os.path.join(caso_dir, BASE_DIR_EXPORT_TEMP), os.path.join(caso_dir, BASE_DIR_EXPORT) , db_path)
