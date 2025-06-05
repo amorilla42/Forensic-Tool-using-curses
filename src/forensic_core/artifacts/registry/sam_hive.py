@@ -58,7 +58,8 @@ def extraer_bootkey_system(path_system_hive):
     parts = []
     for name in ["JD", "Skew1", "GBG", "Data"]:
         subkey = lsa_key.subkey(name)
-        val = subkey.value("").value()
+        values = subkey.values()
+        val = values[0].value() if values else b""
         parts.append(val)
     raw_bootkey = b"".join(parts)
     key_permutation = [0x8, 0x5, 0x4, 0x2, 0xB, 0x9, 0xD, 0x3,
@@ -172,4 +173,5 @@ def extraer_sam(db_path, sam_hive_path, system_hive_path):
     bootkey = extraer_bootkey_system(system_hive_path)
     extraer_usuarios_sam(sam_hive_path, bootkey, db_path)
     # Aquí puedes agregar la lógica para analizar el archivo .reg
+    
     

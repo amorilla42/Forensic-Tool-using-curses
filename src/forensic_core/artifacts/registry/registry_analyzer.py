@@ -2,6 +2,7 @@ from Registry import Registry
 import os
 import pytsk3
 from curses_ui.awesome_layout import AwesomeLayout
+from curses_ui.awesome_menu2 import AwesomeMenu
 from curses_ui.registry_viewer import RegistryViewerPanel
 from forensic_core.artifacts.registry.sam_hive import extraer_sam
 from forensic_core.artifacts.registry.system_hive import extraer_system
@@ -85,10 +86,10 @@ def exportar_registro(caso_dir, ewf_path, partition_offset, path):
 
     output_path = os.path.join(
         caso_dir,
-        BASE_DIR_EXPORT,
+        BASE_DIR_EXPORT_TEMP,
         file_entry.info.name.name.decode("utf-8", errors="ignore")
     )
-    os.makedirs(os.path.join(caso_dir,BASE_DIR_EXPORT), exist_ok=True)
+    os.makedirs(os.path.join(caso_dir,BASE_DIR_EXPORT_TEMP), exist_ok=True)
 
     with open(output_path, "wb") as f:
         while offset < size:
@@ -102,54 +103,116 @@ def exportar_registro(caso_dir, ewf_path, partition_offset, path):
 def obtener_archivos_en_directorio(path):
     return [str(archivo) for archivo in Path(path).iterdir() if archivo.is_file()]
 
-def analizar_hives_sistema(hive_path, export_path, db_path):
-    archivos = obtener_archivos_en_directorio(hive_path)
-    systempath = os.path.join(hive_path, "SYSTEM")
+def visualizar_hive(export_path, archivo):
     
-    
-
     layout = AwesomeLayout()
     layout.render()
-    layout.change_header("Registros del Sistema")
-    layout.change_footer("Las risas")
-    panel = RegistryViewerPanel(layout.body_win, systempath, export_path)
+    layout.change_header("Registros del Sistema. Leyenda: [+] Subclave, [v] Valor")
+    layout.change_footer("ENTER: Acceder a subclaves/Mostrar valores basicos, ↑/↓: Navegar, ← : Anterior subclave, ESC: Salir,  i: Mostrar informacion avanzada, b: Buscar, e: Exportar")
+    panel = RegistryViewerPanel(layout.body_win, archivo, export_path, layout)
     panel.render()
     layout.body_win.keypad(True)
     while True:
         panel.render()
         key = layout.body_win.getch()
-        if key  == ord("q"):
+        if key  == 27:  # ESC
             break
         panel.handle_input(key)
+
+
+def seleccionar_visualizar_registros(layout, archivos, dir_exportar):
+    while True:
+        layout.render()
+        layout.change_header("Visualizador de Registros del Sistema")
+        layout.change_footer("Presiona ESC para salir")
+
+        menu = AwesomeMenu(title="Seleccione el archivo de registro", options=archivos, win=layout.body_win)
+        selected_option = menu.render()
+        if selected_option is None:
+            layout.body_win.clear()
+            layout.body_win.refresh()
+            return "exit"
+        visualizar_hive(dir_exportar, archivos[selected_option])
+
     
-    
-    for archivo in archivos:
-        if archivo.endswith("SYSTEM"):
-            extraer_system(db_path, archivo)
-            # Aquí puedes agregar la lógica para analizar el archivo .reg
-            pass
-        elif archivo.endswith("SOFTWARE"):
-            # Aquí puedes agregar la lógica para analizar el archivo .reg
-            pass
-        elif archivo.endswith("SAM"):
-            extraer_sam(sam_hive_path = archivo, system_hive_path = systempath, db_path = db_path)
-            pass
-        elif archivo.endswith("SECURITY"):
-            # Aquí puedes agregar la lógica para analizar el archivo .reg
-            pass
-        elif archivo.endswith("DEFAULT"):
-            # Aquí puedes agregar la lógica para analizar el archivo .reg
-            pass
-        elif archivo.endswith(".hive"):
-            # Aquí puedes agregar la lógica para analizar el archivo .reg
-            pass
 
+def analizar_hive(layout, archivo, db_path, dir_temp):
+    #system path
+    if os.path.isfile(os.path.join(dir_temp, "SYSTEM")):
+        systempath = os.path.join(dir_temp, "SYSTEM")
+    else:
+        systempath = ""
+    layout.body_win.refresh()
 
+    if archivo.endswith("SYSTEM"):
+        extraer_system(db_path, archivo) 
+        pass
+    elif archivo.endswith("SOFTWARE"):
+        pass
+    elif archivo.endswith("SAM"):
+        if not systempath:
+            layout.body_win.addstr(1, 0, "No se encontró el archivo SYSTEM necesario para analizar SAM.")
+            layout.body_win.refresh()
+            layout.body_win.getch()
+            return
+        extraer_sam(sam_hive_path = archivo, system_hive_path = systempath, db_path = db_path)
+        pass
+    elif archivo.endswith("SECURITY"):
+        pass
+    elif archivo.endswith("DEFAULT"):
+        pass
+    elif archivo.endswith(".hive"):
+        pass
 
+def seleccionar_analizar_registros(layout, archivos, db_path, dir_temp):
+        while True:
+            layout.render()
+            layout.change_header("Analizador de Registros del Sistema")
+            layout.change_footer("Presiona ESC para salir")
+
+            menu = AwesomeMenu(title="Seleccione el archivo de registro", options=archivos, win=layout.body_win)
+            selected_option = menu.render()
+            if selected_option is None:
+                layout.body_win.clear()
+                layout.body_win.refresh()
+                return "exit"
+            analizar_hive(layout, archivos[selected_option], db_path, dir_temp)
+
+           
     
 
 
 
 def registry_analyzer(db_path, caso_dir):
     exportar_hives_sistema(db_path, caso_dir)
-    analizar_hives_sistema(os.path.join(caso_dir, BASE_DIR_EXPORT_TEMP), os.path.join(caso_dir, BASE_DIR_EXPORT) , db_path)
+    dir_temp = os.path.join(caso_dir, BASE_DIR_EXPORT_TEMP)
+    dir_exportar = os.path.join(caso_dir, BASE_DIR_EXPORT)
+    layout = AwesomeLayout()
+    while True:
+        layout.render()
+        layout.change_header("Analizador de Registros del Sistema")
+        layout.change_footer("Presiona ESC para salir")
+
+        archivos = obtener_archivos_en_directorio(dir_temp)
+        if not archivos:
+            layout.body_win.addstr(1, 0, "No se encontraron registros del sistema.")
+            layout.body_win.refresh()
+            layout.body_win.getch()
+            break
+        
+        menu = AwesomeMenu(title="Seleccione accion", options=["Analisis de registros","Visualizar contenido de registros"], win=layout.body_win)
+        selected_option = menu.render()
+        if selected_option is None:
+            layout.body_win.clear()
+            layout.body_win.refresh()
+            break
+        # mostrar reporte de analisis de registros
+        if selected_option == 0:
+            res = seleccionar_analizar_registros(layout, archivos, db_path, dir_temp)
+
+        # visualizar contenido de registros
+        elif selected_option == 1:
+            res = seleccionar_visualizar_registros(layout, archivos, dir_exportar)
+
+        if res == "exit":
+            break

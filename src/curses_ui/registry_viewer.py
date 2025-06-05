@@ -4,8 +4,9 @@ from Registry import Registry
 from .renderizable import Renderizable
 from datetime import datetime
 
+
 class RegistryViewerPanel(Renderizable):
-    def __init__(self, win, hive_path, tmp_path):
+    def __init__(self, win, hive_path, tmp_path, layout):
         self.win = win
         self.hive_path = hive_path
         self.registry = Registry.Registry(hive_path)
@@ -20,6 +21,7 @@ class RegistryViewerPanel(Renderizable):
         self.results = []
         self.parent_stack = []
         self.tmp_path = tmp_path
+        self.layout = layout
 
     def clear(self):
         self.win.clear()
@@ -101,8 +103,6 @@ class RegistryViewerPanel(Renderizable):
             self._export_selected(current_key)
         elif key == ord("i"):
             self._show_info(current_key)
-        elif key == ord("q"):
-            return "exit"
     
     def _select_item(self, key):
         subkeys = key.subkeys()
@@ -121,10 +121,19 @@ class RegistryViewerPanel(Renderizable):
 
 
     def _view_value(self, value):
-        self._popup(f"Valor: {value.name()}\nTipo: {value.value_type_str()}\nValor:{value.value()}")
+        self._popup(f"Nombre: {value.name()}\nTipo: {value.value_type_str()}\nValor: {value.value()}\nTamaño: {len(value.raw_data())} bytes",)
 
     def _show_info(self, key):
         try:
+            subkeys = key.subkeys()
+            values = key.values()
+            total_items = len(subkeys) + len(values)
+            
+            if total_items == 0:
+                self._popup("No hay subclaves ni valores en esta clave.", "Información", "Presiona cualquier tecla para continuar")
+                return
+
+
             if self.selected_index < len(key.subkeys()):
                 # Es una subclave
                 target = key.subkeys()[self.selected_index]
@@ -154,9 +163,9 @@ class RegistryViewerPanel(Renderizable):
                     raw = target.raw_data()
                     info += f"\nTamaño: {len(raw)} bytes" if raw else ""
 
-            self._popup(info)
+            self._popup(info, "Información avanzada", "↑/↓: Navegar, Presiona cualquier otra tecla para continuar")
         except Exception as e:
-            self._popup(f"Error obteniendo info: {e}")
+            self._popup(f"Error obteniendo info: {e}", "Error", "Presiona cualquier tecla para continuar")
 
 
 
@@ -169,15 +178,15 @@ class RegistryViewerPanel(Renderizable):
                     f.write(f"[{subkey.path()}]\n")
                     for v in subkey.values():
                         f.write(f"\"{v.name()}\"={repr(v.value())}\n")
-                self._popup(f"Clave exportada a: {export_path}")
+                self._popup(f"Clave exportada a: {export_path}", "Exportación exitosa", "Presiona cualquier tecla para continuar")
             else:
                 value = key.values()[self.selected_index - len(key.subkeys())]
                 export_path = f"{self.tmp_path}/{value.name()}.txt"
                 with open(export_path, "w") as f:
                     f.write(str(value.value()))
-                self._popup(f"Valor exportado a: {export_path}")
+                self._popup(f"Valor exportado a: {export_path}", "Exportación exitosa", "Presiona cualquier tecla para continuar")
         except Exception as e:
-            self._popup(f"Error exportando: {e}")
+            self._popup(f"Error exportando: {e}", "Error de exportación", "Presiona cualquier tecla para continuar")
 
     def _show_search_results(self):
         index = 0
@@ -263,12 +272,12 @@ class RegistryViewerPanel(Renderizable):
         self._search_recursive(self._get_current_key(), search_term)
 
         if not self.results:
-            self._popup("No se encontraron resultados.")
+            self._popup("No se encontraron resultados.", "Búsqueda", "Presiona cualquier tecla para continuar")
         else:
             self._show_search_results()
 
 
-    def _popup(self, text):
+    def _popup(self, text, title=" Información básica ",footer=" ↑/↓: Navegar, Presiona cualquier otra tecla para continuar "):
         max_y, max_x = self.win.getmaxyx()
         popup_h = min(15, max_y - 4)
         popup_w = min(80, max_x - 4)
@@ -290,13 +299,19 @@ class RegistryViewerPanel(Renderizable):
         while True:
             popup.erase()
             popup.box()
+            #header del popup
+            popup.addstr(0, (popup_w - len(title)) // 2, title)
 
+            #contenido del popup
             for idx in range(popup_h - 2):
                 line_index = scroll_pos + idx
                 if line_index >= total_lines:
                     break
                 popup.addstr(idx + 1, 2, wrapped_lines[line_index][:popup_w - 4])
-
+            
+            #footer del popup
+            popup.addstr(popup_h-1, (popup_w - len(footer)) // 2, footer)
+            
             popup.refresh()
             key = popup.getch()
 
