@@ -38,7 +38,6 @@ def extraer_system(db_path, hive_path):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        # Puedes ajustar esto según cómo estés guardando la info
         cursor.execute("SELECT last_boot_time FROM system_info ORDER BY id DESC LIMIT 1")
         row = cursor.fetchone()
         metadata = {"last_boot_time": row[0] if row else "N/A"}

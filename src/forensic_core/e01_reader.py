@@ -111,6 +111,7 @@ def recorrer_archivos_recursivo(cursor, fs_info, dir_obj, parent_path, partition
             continue
 
 def calcular_hash_E01(ruta_E01, algoritmo="sha256", buffer_size=65536):
+    return "hola"
     """
     Calcula el hash de un archivo .E01 (EWF).
     

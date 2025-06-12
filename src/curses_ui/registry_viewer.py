@@ -16,7 +16,6 @@ class RegistryViewerPanel(Renderizable):
         self.current_path = []
         self.selected_index = 0
         self.scroll_offset = 0
-        self.mode = "browse"
         self.search_term = ""
         self.results = []
         self.parent_stack = []

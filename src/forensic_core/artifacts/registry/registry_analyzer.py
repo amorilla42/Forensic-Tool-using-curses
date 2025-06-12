@@ -30,7 +30,7 @@ Users/usuario/AppData/.../UsrClass.dat	    UsrClass.dat	Extensión de configurac
 '''
 # Rutas relativas y nombre de hive esperado
 HIVES_SISTEMA = {
-    "SYSTEM": "Windows/System32/config/SYSTEM",
+    "SYSTEM": "Windows/System32/config/system",
     "SOFTWARE": "Windows/System32/config/SOFTWARE",
     "SAM": "Windows/System32/config/SAM",
     "SECURITY": "Windows/System32/config/SECURITY",
@@ -87,7 +87,7 @@ def exportar_registro(caso_dir, ewf_path, partition_offset, path):
     output_path = os.path.join(
         caso_dir,
         BASE_DIR_EXPORT_TEMP,
-        file_entry.info.name.name.decode("utf-8", errors="ignore")
+        file_entry.info.name.name.decode("utf-8", errors="ignore").upper()
     )
     os.makedirs(os.path.join(caso_dir,BASE_DIR_EXPORT_TEMP), exist_ok=True)
 
@@ -144,7 +144,7 @@ def analizar_hive(layout, archivo, db_path, dir_temp):
         systempath = ""
     layout.body_win.refresh()
 
-    if archivo.endswith("SYSTEM"):
+    if archivo.endswith("SYSTEM") or archivo.endswith("system"):
         extraer_system(db_path, archivo) 
         pass
     elif archivo.endswith("SOFTWARE"):

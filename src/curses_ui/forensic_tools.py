@@ -37,7 +37,7 @@ class ForensicTools:
         layout.change_footer("Presiona ESC para salir")
 
         self.e01_path = AwesomeInput(layout.body_win).render()
-        self.e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/portatil.E01"
+        self.e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/raro.E01"
         self.caso_dir = crear_directorio_caso(self.nombre_caso)
 
         self.db_path = os.path.join(self.caso_dir, f"{self.nombre_caso}.db")

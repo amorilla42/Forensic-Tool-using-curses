@@ -1,177 +1,184 @@
 import sqlite3
 from Registry import Registry
-from Cryptodome.Cipher import ARC4, DES
-from Cryptodome.Hash import MD5
-import struct
-
-
-def transform_des_key(key_7):
-    key = []
-    for i in range(7):
-        key.append(key_7[i])
-    s = bytearray(8)
-    s[0] = key[0] & 0xFE
-    s[1] = ((key[0] << 7) | (key[1] >> 1)) & 0xFE
-    s[2] = ((key[1] << 6) | (key[2] >> 2)) & 0xFE
-    s[3] = ((key[2] << 5) | (key[3] >> 3)) & 0xFE
-    s[4] = ((key[3] << 4) | (key[4] >> 4)) & 0xFE
-    s[5] = ((key[4] << 3) | (key[5] >> 5)) & 0xFE
-    s[6] = ((key[5] << 2) | (key[6] >> 6)) & 0xFE
-    s[7] = (key[6] << 1) & 0xFE
-    for i in range(8):
-        b = s[i]
-        b = b & 0xFE
-        if bin(b).count('1') % 2 == 0:
-            s[i] |= 1
-    return bytes(s)
-
-
-def sid_to_key(rid):
-    key1 = transform_des_key(struct.pack('<L', (rid & 0xFFFFFFFF) << 1)[:7])
-    key2 = transform_des_key(struct.pack('<L', (((rid & 0xFFFFFFFF) << 1) | 1) & 0xFFFFFFFF)[:7])
-    return key1, key2
-
-
-def decrypt_hash(encrypted_hash, rid, bootkey):
-    if not encrypted_hash or len(encrypted_hash) != 16:
-        return None
-
-    h = MD5.new()
-    h.update(bootkey + struct.pack('<L', rid))
-    rc4_key = h.digest()
-    cipher = ARC4.new(rc4_key)
-    obfuscated_hash = cipher.decrypt(encrypted_hash)
-
-    des_k1, des_k2 = sid_to_key(rid)
-
-    des1 = DES.new(des_k1, DES.MODE_ECB)
-    des2 = DES.new(des_k2, DES.MODE_ECB)
-
-    decrypted = des1.decrypt(obfuscated_hash[:8]) + des2.decrypt(obfuscated_hash[8:])
-    return decrypted.hex()
-
-
-def extraer_bootkey_system(path_system_hive):
-    reg = Registry.Registry(path_system_hive)
-    controlset = obtener_controlset_activo(reg)
-    lsa_key = reg.open(f"{controlset}\\Control\\Lsa")
-    parts = []
-    for name in ["JD", "Skew1", "GBG", "Data"]:
-        subkey = lsa_key.subkey(name)
-        values = subkey.values()
-        val = values[0].value() if values else b""
-        parts.append(val)
-    raw_bootkey = b"".join(parts)
-    key_permutation = [0x8, 0x5, 0x4, 0x2, 0xB, 0x9, 0xD, 0x3,
-                       0x0, 0x6, 0x1, 0xC, 0xE, 0xA, 0xF, 0x7]
-    bootkey = bytearray(16)
-    for i, pos in enumerate(key_permutation):
-        bootkey[i] = raw_bootkey[pos]
-    return bytes(bootkey)
-
-
-def obtener_controlset_activo(reg):
-    select_key = reg.open("Select")
-    current = select_key.value("Current").value()
-    return f"ControlSet{current:03d}"
+from curses_ui.awesome_layout import AwesomeLayout
+from curses_ui.sam_info_view import SamInfoViewer
+from forensic_core.artifacts.registry.user_extractor import buscar_usuario_por_rid, extraer_usuarios
 
 
 
-def extraer_usuarios_sam(sam_hive_path, bootkey, db_path):
-    reg = Registry.Registry(sam_hive_path)
-    
-    # Detectar si hay un contenedor raíz tipo CMI-CreateHive
-    root_key = reg.root()
-    subkeys = root_key.subkeys()
-    real_root = None
-    for sub in subkeys:
-        if sub.name().startswith("CMI-CreateHive"):
-            real_root = sub
-            break
-    if real_root is None:
-        real_root = root_key
-
-    try:
-        users_key = real_root.subkey("SAM\\Domains\\Account\\Users")
-    except Registry.RegistryKeyNotFoundException:
-        print("No se pudo encontrar la clave de usuarios en el SAM.")
-        return
-
-    cursor = sqlite3.connect(db_path).cursor()
-
-    # Crear tabla si no existe
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            rid INTEGER PRIMARY KEY,
-            username TEXT,
-            fullname TEXT,
-            last_login TEXT,
-            lm_hash TEXT,
-            nt_hash TEXT
-        )
-    """)
-
-    for user_subkey in users_key.subkeys():
-        rid = int(user_subkey.name(), 16)
-        v = user_subkey.value("V").value()
-        # La estructura binaria de V contiene información del usuario, extraemos hashes y nombre
-        # Para simplificar extraemos el nombre y hashes NT y LM
-        # Aquí debes parsear bien la estructura V, aquí un ejemplo simple:
-        # Offset para username (32 bytes, utf-16), lm_hash y nt_hash offsets conocidos
-        try:
-            username_len = int.from_bytes(v[0x0C:0x0E], "little")
-            username_off = int.from_bytes(v[0x0E:0x10], "little")
-            username = v[username_off:username_off + username_len].decode("utf-16le")
-
-            lm_hash_off = int.from_bytes(v[0x9C:0xA0], "little")
-            lm_hash_len = int.from_bytes(v[0xA0:0xA4], "little")
-            lm_hash_enc = v[lm_hash_off:lm_hash_off + lm_hash_len]
-
-            nt_hash_off = int.from_bytes(v[0xA4:0xA8], "little")
-            nt_hash_len = int.from_bytes(v[0xA8:0xAC], "little")
-            nt_hash_enc = v[nt_hash_off:nt_hash_off + nt_hash_len]
-
-            lm_hash = decrypt_hash(lm_hash_enc, rid, bootkey)
-            nt_hash = decrypt_hash(nt_hash_enc, rid, bootkey)
-
-            # Por ejemplo, extraemos también la última hora de login en formato Windows FILETIME (8 bytes)
-            last_login_raw = v[0x78:0x80]
-            last_login = _filetime_to_dt(last_login_raw)
-
-            cursor.execute("""
-                INSERT OR REPLACE INTO users (rid, username, fullname, last_login, lm_hash, nt_hash)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (rid, username, username, last_login, lm_hash, nt_hash))
-
-        except Exception as e:
-            print(f"Error procesando usuario RID {rid}: {e}")
-
-    cursor.connection.commit()
-    cursor.connection.close()
-
-
-def _filetime_to_dt(filetime_bytes):
-    """Convierte FILETIME (Windows) a cadena ISO."""
-    if len(filetime_bytes) != 8:
-        return None
-    ft = int.from_bytes(filetime_bytes, byteorder='little', signed=False)
-    if ft == 0:
-        return None
-    # FILETIME es en 100 nanosegundos desde 1601-01-01
+def parse_f_structure(f_value):
     import datetime
-    us = ft / 10
-    dt = datetime.datetime(1601, 1, 1) + datetime.timedelta(microseconds=us)
-    return dt.isoformat()
+
+    def filetime_to_dt(ft_bytes):
+        try:
+            if len(ft_bytes) != 8:
+                return None
+            ft = int.from_bytes(ft_bytes, byteorder='little')
+            if ft == 0:
+                return None
+            us = ft / 10
+            dt = datetime.datetime(1601, 1, 1) + datetime.timedelta(microseconds=us)
+            return dt.isoformat()
+        except Exception as e:
+            print(f"[!] Fecha inválida: {e}")
+            return None
 
 
-# Uso:
-# 1) extraer bootkey del SYSTEM
-# 2) con bootkey y SAM, extraer usuarios y hashes desencriptados
-# 3) guardar todo en la base SQLite
+    last_login_time = filetime_to_dt(f_value[0x08:0x10])
+    login_count = int.from_bytes(f_value[0x10:0x12], "little")
+    account_flags = int.from_bytes(f_value[0x1C:0x20], "little")
+    
+
+    return  last_login_time, login_count, account_flags
+
+def interpretar_flags(flags):
+    return {
+        "Account Disabled": bool(flags & 0x0002),
+        "Password Never Expires": bool(flags & 0x0010),
+        "Normal User Account": bool(flags & 0x1000),
+        "Admin Account": bool(flags & 0x0200),
+    }
+
+
+def extraer_usuarios_sam(sam_hive_path, system_hive_path, db_path):
+    try:
+        reg = Registry.Registry(sam_hive_path)
+        
+        try:
+            users_key = reg.open("SAM\\Domains\\Account\\Users")
+        except Registry.RegistryKeyNotFoundException:
+            print("No se pudo encontrar la clave de usuarios en el SAM.")
+            return
+
+        # Construir diccionario RID -> username
+        rid_to_username = {}
+        try:
+            names_key = reg.open("SAM\\Domains\\Account\\Users\\Names")
+            for name_subkey in names_key.subkeys():
+                try:
+                    rid = name_subkey.values()[0].value_type()
+                    rid_to_username[rid] = name_subkey.name()
+                except Exception as e:
+                    continue
+        except Exception as e:
+            print(f"No se pudo procesar Users\\Names: {e}")
+
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                rid INTEGER PRIMARY KEY,
+                username TEXT,
+                last_login TEXT,
+                login_count INTEGER,
+                flags INTEGER,
+                account_disabled INTEGER,
+                password_never_expires INTEGER,
+                normal_user INTEGER,
+                admin_user INTEGER,
+                lm_hash TEXT,
+                nt_hash TEXT,
+                password_hint TEXT,
+                cleartext_password TEXT
+            )
+        """)
+        cursor.execute("DELETE FROM users")  # Limpiar tabla antes de insertar nuevos datos
+        conn.commit()
+
+        userinfo = extraer_usuarios(system_hive_path, sam_hive_path)
+
+        for user_subkey in users_key.subkeys():
+            name = user_subkey.name()
+            try:
+                rid = int(name, 16)
+            except ValueError:
+                continue
+            try:
+                username = rid_to_username.get(rid, "")
+                v = user_subkey.value("V").value()
+                f = user_subkey.value("F").value()
+
+                last_login, login_count, flags = parse_f_structure(f)
+                login_count = int.from_bytes(f[0x10:0x12], "little")
+
+                flag_info = interpretar_flags(flags)
+
+                user = buscar_usuario_por_rid(userinfo, rid)
+
+                lm_hash = user['lm_hash']
+                nt_hash = user['nt_hash']
+                
+
+                try:
+                    hint_value = user_subkey.value("UserPasswordHint").value()
+                    password_hint = hint_value.decode("utf-16le", errors="ignore") if isinstance(hint_value, bytes) else str(hint_value)
+                except Exception:
+                    password_hint = None
+
+                cursor.execute("""
+                    INSERT OR REPLACE INTO users (
+                        rid, username, last_login, login_count,
+                        flags, account_disabled, password_never_expires,
+                        normal_user, admin_user,
+                        lm_hash, nt_hash, password_hint, cleartext_password
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )
+                """, (  rid, username, last_login, login_count,
+                        flags,
+                        int(flag_info["Account Disabled"]),
+                        int(flag_info["Password Never Expires"]),
+                        int(flag_info["Normal User Account"]),
+                        int(flag_info["Admin Account"]),
+                        lm_hash, nt_hash, password_hint, None
+                    ))
+
+
+            except Exception as e:
+                print(f"Error procesando usuario RID {rid}: {e}")
+
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error al extraer usuarios del SAM: {e}")
+
+
+def visualizar_usuarios(db_path):
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users")
+        columnas = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        conn.close()
+        
+        lista_usuarios = [dict(zip(columnas, fila)) for fila in rows]
+
+
+        layout = AwesomeLayout()
+        layout.render()
+        layout.change_header("Usuarios extraídos del SAM")
+        layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver detalles del usuario, c: Crackear contraseña")
+        panel = SamInfoViewer(layout.body_win, lista_usuarios)
+        panel.render()
+        layout.body_win.keypad(True)
+        while True:
+            panel.render()
+            key = layout.body_win.getch()
+            if key  == 27:  # ESC
+                break
+            if key == ord('c'):
+                layout.change_header("Crackeando contraseña...")
+            panel.handle_input(key)
+            if key ==ord('c'):
+                layout.change_header("Usuarios extraídos del SAM")
+    except Exception as e:
+        print(f"Error al visualizar usuarios: {e}")
+    
+
 
 def extraer_sam(db_path, sam_hive_path, system_hive_path):
-    bootkey = extraer_bootkey_system(system_hive_path)
-    extraer_usuarios_sam(sam_hive_path, bootkey, db_path)
-    # Aquí puedes agregar la lógica para analizar el archivo .reg
-    
+    extraer_usuarios_sam(sam_hive_path, system_hive_path, db_path)
+    visualizar_usuarios(db_path)
+
     
