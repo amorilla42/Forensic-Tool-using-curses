@@ -16,3 +16,4 @@ if __name__ == "__main__":
         print("\nInterrumpido por el usuario.")
     except Exception as e:
         print(f"Error inesperado: {e}")
+        

@@ -2,7 +2,6 @@ import curses
 import textwrap
 
 from utils.hashcat import crack_usuario, is_hashcat_installed
-from utils.jhon_the_ripper import decrypt_password_with_jhon, is_jhon_the_ripper_installed
 from .renderizable import Renderizable
 
 class SamInfoViewer(Renderizable):
@@ -34,9 +33,9 @@ class SamInfoViewer(Renderizable):
             entry_idx = self.scroll_offset + idx
             line = f"{user['username']} (RID: {user['rid']})"
             if entry_idx == self.selected_index:
-                self.win.addstr(screen_idx, 0, line[:max_x - 1], curses.A_REVERSE)
+                self.win.addstr(screen_idx, 3, line[:max_x - 1], curses.A_REVERSE)
             else:
-                self.win.addstr(screen_idx, 0, line[:max_x - 1])
+                self.win.addstr(screen_idx, 3, line[:max_x - 1])
 
         self.win.refresh()
 

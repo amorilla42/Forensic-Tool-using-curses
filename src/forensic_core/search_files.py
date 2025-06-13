@@ -23,7 +23,7 @@ def search_files(db_path, case_dir):
 
     query = AwesomeInput(layout.body_win).render()
     # TODO: MEJORAR LA BUSQUEDA QUE COMPARE Y HAGA BUSQUEDA EN TODOS LOS CAMPOS DE FILESISTEM_ENTRY
-    cursor.execute("SELECT * FROM filesystem_entry WHERE type !='dir' AND name LIKE ?", ('%' + query + '%',))
+    cursor.execute("SELECT * FROM filesystem_entry WHERE type !='dir' AND full_path LIKE ?", ('%' + query + '%',))
     results = cursor.fetchall()
     conn.close()
     if not results:

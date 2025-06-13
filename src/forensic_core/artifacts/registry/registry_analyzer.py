@@ -5,6 +5,7 @@ from curses_ui.awesome_layout import AwesomeLayout
 from curses_ui.awesome_menu2 import AwesomeMenu
 from curses_ui.registry_viewer import RegistryViewerPanel
 from forensic_core.artifacts.registry.sam_hive import extraer_sam
+from forensic_core.artifacts.registry.software_hive import extraer_software
 from forensic_core.artifacts.registry.system_hive import extraer_system
 from forensic_core.e01_reader import open_e01_image
 import sqlite3
@@ -148,7 +149,7 @@ def analizar_hive(layout, archivo, db_path, dir_temp):
         extraer_system(db_path, archivo) 
         pass
     elif archivo.endswith("SOFTWARE"):
-        pass
+        extraer_software(archivo, db_path)
     elif archivo.endswith("SAM"):
         if not systempath:
             layout.body_win.addstr(1, 0, "No se encontró el archivo SYSTEM necesario para analizar SAM.")

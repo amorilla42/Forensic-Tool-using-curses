@@ -57,9 +57,9 @@ class RegistryViewerPanel(Renderizable):
             screen_idx = idx + 2
             entry_idx = self.scroll_offset + idx
             if entry_idx == self.selected_index:
-                self.win.addstr(screen_idx, 0, name[:max_x - 1], curses.A_REVERSE)
+                self.win.addstr(screen_idx, 4, name[:max_x - 1], curses.A_REVERSE)
             else:
-                self.win.addstr(screen_idx, 0, name[:max_x - 1])
+                self.win.addstr(screen_idx, 4, name[:max_x - 1])
 
         self.win.refresh()
 
