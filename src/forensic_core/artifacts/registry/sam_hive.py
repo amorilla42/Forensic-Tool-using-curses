@@ -70,7 +70,7 @@ def extraer_usuarios_sam(sam_hive_path, system_hive_path, db_path):
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 rid INTEGER PRIMARY KEY,
-                username TEXT,
+                username TEXT UNIQUE,
                 last_login TEXT,
                 login_count INTEGER,
                 flags INTEGER,

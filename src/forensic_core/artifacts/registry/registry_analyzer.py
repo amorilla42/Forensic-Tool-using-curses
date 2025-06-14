@@ -7,6 +7,7 @@ from curses_ui.registry_viewer import RegistryViewerPanel
 from forensic_core.artifacts.registry.sam_hive import extraer_sam
 from forensic_core.artifacts.registry.software_hive import extraer_software
 from forensic_core.artifacts.registry.system_hive import extraer_system
+from forensic_core.artifacts.registry.usernt_data_hive import extraer_ntuser_artefactos, visualizar_resumen_usuarios
 from forensic_core.e01_reader import open_e01_image
 import sqlite3
 from pathlib import Path
@@ -21,11 +22,7 @@ BASE_DIR_EXPORT = "exported_files"
 '''
 System32/config/SYSTEM	                    SYSTEM	        Información del arranque, controladores
 System32/config/SOFTWARE	                SOFTWARE	    Software instalado y configuración general
-System32/config/SAM	                        SAM	            Usuarios locales y contraseñas encriptadas
-System32/config/SECURITY	                SECURITY	    Políticas de seguridad y SIDs
-System32/config/DEFAULT	                    DEFAULT	        Perfil por defecto
-System32/config/BBI     	                BBI 	        Opcionales, usados por Windows moderno
-System32/config/ELAM                        ELAM	        Opcionales, usados por Windows moderno      
+System32/config/SAM	                        SAM	            Usuarios locales y contraseñas encriptadas    
 Users/usuario/NTUSER.DAT	                NTUSER.DAT	    Configuración de usuario
 Users/usuario/AppData/.../UsrClass.dat	    UsrClass.dat	Extensión de configuraciones de usuario
 '''
@@ -35,9 +32,7 @@ HIVES_SISTEMA = {
     "SOFTWARE": "Windows/System32/config/SOFTWARE",
     "SAM": "Windows/System32/config/SAM",
     "SECURITY": "Windows/System32/config/SECURITY",
-    "DEFAULT": "Windows/System32/config/DEFAULT",
-    "BBI": "Windows/System32/config/BBI",
-    "ELAM": "Windows/System32/config/ELAM"
+
 }
 
 # Hive de usuario se busca por nombre específico en ruta que contenga "Users"
@@ -67,11 +62,65 @@ def exportar_hives_sistema(db_path, caso_dir):
     
     conn.close()
 
+def exportar_hives_usuario(db_path, caso_dir):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    for hive_name in HIVES_USUARIO:
+        cursor.execute("SELECT * FROM filesystem_entry WHERE type !='dir' AND full_path LIKE ?", ('%' + hive_name,))
+        results = cursor.fetchall()
+        if not results:
+            continue
+        partition_offset_sectors = cursor.execute(
+            "SELECT partition_offset from partition_info WHERE partition_id = ?", (results[0][1]+1,)
+        ).fetchone()[0]
+        path = cursor.execute("SELECT e01_path FROM case_info").fetchall()
+        exportar_reg_usuario(
+            caso_dir= caso_dir,
+            ewf_path=path[0][0],
+            partition_offset=partition_offset_sectors,
+            paths=[result[2] for result in results]
+        )
+    conn.close()
 
-def exportar_hives(ewf_path, partition_offset):
+def generar_nombre_export_ntuser(ruta_completa):
+    """
+    Dada una ruta como '/Users/Jimmy Wilson/NTUSER.DAT', devuelve 'Jimmy Wilson_NTUSER.DAT'
+    """
+    ruta_normalizada = ruta_completa.replace("\\", "/").strip("/")
+    partes = ruta_normalizada.split("/")
 
-    exportar_hives_sistema(ewf_path, partition_offset)
+    if len(partes) >= 2 and partes[-1].lower() == "ntuser.dat":
+        usuario = partes[-2].strip()
+        if not usuario:
+            usuario = "desconocido"
+        return f"{usuario}_NTUSER.DAT"
+    else:
+        return "ntuser_desconocido.dat"
 
+def exportar_reg_usuario(caso_dir, ewf_path, partition_offset, paths):
+    img = open_e01_image(ewf_path)
+    fs = pytsk3.FS_Info(img, offset=partition_offset)
+
+    for path in paths:
+        file_entry = fs.open(path)
+        size = file_entry.info.meta.size
+        offset = 0
+        chunk_size = 1024 * 1024  # 1 MB
+        output_path = os.path.join(
+            caso_dir,
+            BASE_DIR_EXPORT_TEMP,
+            generar_nombre_export_ntuser(path)
+        )
+        os.makedirs(os.path.join(caso_dir, BASE_DIR_EXPORT_TEMP), exist_ok=True)
+        if os.path.exists(output_path):
+            continue
+        with open(output_path, "wb") as f:
+            while offset < size:
+                data = file_entry.read_random(offset, min(chunk_size, size - offset))
+                if not data:
+                    break
+                f.write(data)
+                offset += len(data)
 
 
 
@@ -92,6 +141,8 @@ def exportar_registro(caso_dir, ewf_path, partition_offset, path):
     )
     os.makedirs(os.path.join(caso_dir,BASE_DIR_EXPORT_TEMP), exist_ok=True)
 
+    if os.path.exists(output_path):
+        return
     with open(output_path, "wb") as f:
         while offset < size:
             data = file_entry.read_random(offset, min(chunk_size, size - offset))
@@ -158,14 +209,16 @@ def analizar_hive(layout, archivo, db_path, dir_temp):
             return
         extraer_sam(sam_hive_path = archivo, system_hive_path = systempath, db_path = db_path)
         pass
-    elif archivo.endswith("SECURITY"):
+    elif archivo.endswith("NTUSER.DAT"):
+        extraer_ntuser_artefactos(archivo, db_path)
         pass
     elif archivo.endswith("DEFAULT"):
         pass
     elif archivo.endswith(".hive"):
         pass
 
-def seleccionar_analizar_registros(layout, archivos, db_path, dir_temp):
+def seleccionar_analizar_registros(layout, archivos, db_path, dir_temp, dir_exportar):
+        visualizar_resumen_usuarios(db_path, dir_exportar)
         while True:
             layout.render()
             layout.change_header("Analizador de Registros del Sistema")
@@ -186,6 +239,7 @@ def seleccionar_analizar_registros(layout, archivos, db_path, dir_temp):
 
 def registry_analyzer(db_path, caso_dir):
     exportar_hives_sistema(db_path, caso_dir)
+    exportar_hives_usuario(db_path, caso_dir)
     dir_temp = os.path.join(caso_dir, BASE_DIR_EXPORT_TEMP)
     dir_exportar = os.path.join(caso_dir, BASE_DIR_EXPORT)
     layout = AwesomeLayout()
@@ -209,7 +263,7 @@ def registry_analyzer(db_path, caso_dir):
             break
         # mostrar reporte de analisis de registros
         if selected_option == 0:
-            res = seleccionar_analizar_registros(layout, archivos, db_path, dir_temp)
+            res = seleccionar_analizar_registros(layout, archivos, db_path, dir_temp, dir_exportar)
 
         # visualizar contenido de registros
         elif selected_option == 1:

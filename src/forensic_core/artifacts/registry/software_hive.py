@@ -8,9 +8,6 @@ def extraer_software(software_path, db_path):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
     # Eliminar todas las tablas existentes
     cursor.execute("DROP TABLE IF EXISTS system_info2;")
     cursor.execute("DROP TABLE IF EXISTS installed_programs;")
