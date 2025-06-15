@@ -88,7 +88,7 @@ def parse_userassist_line(line):
 
 
 class UserntDataViewer(Renderizable):
-    def __init__(self, win, db_path, export_path):
+    def __init__(self, win, db_path, export_path, layout):
         self.win = win
         self.db_path = db_path
         self.users = []
@@ -96,6 +96,7 @@ class UserntDataViewer(Renderizable):
         self.scroll_offset = 0
         self.show_system_entries = False
         self.export_path = export_path
+        self.layout = layout
         self._load_users()
 
     def _load_users(self):
@@ -149,9 +150,12 @@ class UserntDataViewer(Renderizable):
             "Dispositivos conectados (USB y similares)",
             "Archivos abiertos/guardados recientemente",
             "Ejecuciones visualizadas por Explorer",
-            "Exportar toda la información a archivo .txt",
-            "Activar/Desactivar entradas del sistema en MuiCache"
+            "ShellBags",
+            "MRU (archivos usados recientemente)",
+            "TrayNotify: ejecutables e información del systray",
+            "TrayNotify: metadatos de entradas del systray"
         ]
+        self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion, s: Activar/Desactivar entradas del sistema en MuiCache")
 
         selected = 0
         while True:
@@ -172,14 +176,15 @@ class UserntDataViewer(Renderizable):
             elif key == curses.KEY_DOWN:
                 selected = (selected + 1) % len(options)
             elif key in [10, 13]:
-                if selected < 6:
+                if selected < len(options):
                     self._show_category_data(username, selected)
-                elif selected == 6:
-                    self._export_user_data(username)
-                elif selected == 7:
-                    self.show_system_entries = not self.show_system_entries
             elif key in [27, ord("q")]:
+                self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario")
                 break
+            elif key == ord("e"):
+                self._export_user_data(username)
+            elif key == ord("s"):
+                self.show_system_entries = not self.show_system_entries
 
     def _show_category_data(self, username, index):
         mapping = [
@@ -188,13 +193,32 @@ class UserntDataViewer(Renderizable):
             ("run_mru", "order_key, command"),
             ("mountpoints2", "key_name, volume_label, data"),
             ("open_save_mru", "extension, entry_name, path"),
-            ("muicache", "entry_name, description")
+            ("muicache", "entry_name, description"),
+            ("shellbags", "user, path, key_path, timestamp"),
+            ("mru_entries", "user, mru_type, extension, file_name, key_path, timestamp"),
+            ("traynotify_executables", "user, source, exe_name, extension_type, suspicious, key_path, timestamp"),
+            ("traynotify_metadata", "user, value_name, data, key_path, timestamp")
         ]
 
         table, fields = mapping[index]
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute(f"SELECT {fields} FROM {table} WHERE username=?", (username,))
+        user_field_per_table = {
+            "userassist": "username",
+            "recent_docs": "username",
+            "run_mru": "username",
+            "mountpoints2": "username",
+            "open_save_mru": "username",
+            "muicache": "username",
+            "shellbags": "user",
+            "mru_entries": "user",
+            "traynotify_executables": "user",
+            "traynotify_metadata": "user"
+        }
+
+        campo_usuario = user_field_per_table.get(table, "username")
+        cursor.execute(f"SELECT {fields} FROM {table} WHERE {campo_usuario}=?", (username,))
+
         rows = cursor.fetchall()
         conn.close()
 
@@ -204,7 +228,11 @@ class UserntDataViewer(Renderizable):
             "Comandos lanzados con Win+R",
             "Dispositivos externos conectados",
             "Archivos recientes en diálogos Abrir/Guardar",
-            "Programas visualizados en Explorer (MuiCache)"
+            "Programas visualizados en Explorer (MuiCache)",
+            "ShellBags",
+            "MRU (archivos usados recientemente)",
+            "TrayNotify: ejecutables e información del systray",
+            "TrayNotify: metadatos de entradas del systray"
         ]
 
         if index == 0:
@@ -222,6 +250,9 @@ class UserntDataViewer(Renderizable):
                     info += ", ".join(str(col) for col in row) + "\n"
 
         show_scrollable_popup(self.win, info, section_titles[index])
+        self.layout.change_header("Informacion general de los usuarios disponibles")
+        self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion, s: Activar/Desactivar entradas del sistema en MuiCache")
+
 
     def _export_user_data(self, username):
         conn = sqlite3.connect(self.db_path)
@@ -233,12 +264,30 @@ class UserntDataViewer(Renderizable):
             ("run_mru", "Comandos lanzados con Win+R", "order_key, command"),
             ("mountpoints2", "Dispositivos externos conectados", "key_name, volume_label, data"),
             ("open_save_mru", "Archivos recientes en diálogos Abrir/Guardar", "extension, entry_name, path"),
-            ("muicache", "Programas visualizados en Explorer (MuiCache)", "entry_name, description")
+            ("muicache", "Programas visualizados en Explorer (MuiCache)", "entry_name, description"),
+            ("shellbags", "ShellBags", "user, path, key_path, timestamp"),
+            ("mru_entries", "MRU (archivos usados recientemente)", "user, mru_type, extension, file_name, key_path, timestamp"),
+            ("traynotify_executables", "TrayNotify: ejecutables e información del systray", "user, source, exe_name, extension_type, suspicious, key_path, timestamp"),
+            ("traynotify_metadata", "TrayNotify: metadatos de entradas del systray", "user, value_name, data, key_path, timestamp")
         ]
+
+        user_field_per_table = {
+            "userassist": "username",
+            "recent_docs": "username",
+            "run_mru": "username",
+            "mountpoints2": "username",
+            "open_save_mru": "username",
+            "muicache": "username",
+            "shellbags": "user",
+            "mru_entries": "user",
+            "traynotify_executables": "user",
+            "traynotify_metadata": "user"
+        }
 
         output = f"Resumen forense de usuario: {username}\n\n"
         for table, title, fields in sections:
-            cursor.execute(f"SELECT {fields} FROM {table} WHERE username=?", (username,))
+            campo_usuario = user_field_per_table.get(table, "username")
+            cursor.execute(f"SELECT {fields} FROM {table} WHERE {campo_usuario}=?", (username,))
             rows = cursor.fetchall()
             output += f"== {title} ==\n"
             if not rows:
@@ -259,3 +308,5 @@ class UserntDataViewer(Renderizable):
             f.write(output)
 
         show_scrollable_popup(self.win, f"Datos exportados correctamente a:\n{filename}", "Exportación exitosa")
+        self.layout.change_header("Informacion general de los usuarios disponibles")
+        self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion, s: Activar/Desactivar entradas del sistema en MuiCache")

@@ -59,65 +59,7 @@ def crear_base_de_datos(path_db):
         FOREIGN KEY (entry_id) REFERENCES filesystem_entry(entry_id)
     );
 
-    -- Logs de análisis
-    CREATE TABLE IF NOT EXISTS analysis_log (
-        log_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        case_id INTEGER NOT NULL,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        message TEXT NOT NULL,
-        level TEXT DEFAULT 'INFO',
-        FOREIGN KEY (case_id) REFERENCES case_info(case_id)
-    );
 
-    -- Etiquetas manuales
-    CREATE TABLE IF NOT EXISTS user_tag (
-        tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        entry_id INTEGER NOT NULL,
-        tag TEXT NOT NULL,
-        comment TEXT,
-        FOREIGN KEY (entry_id) REFERENCES filesystem_entry(entry_id)
-    );
-
-    -- Entradas del registro de Windows
-    CREATE TABLE IF NOT EXISTS registry_entries (
-        reg_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        case_id INTEGER NOT NULL,
-        hive TEXT NOT NULL,
-        key_path TEXT NOT NULL,
-        value_name TEXT,
-        value_data TEXT,
-        value_type TEXT,
-        last_modified DATETIME,
-        FOREIGN KEY (case_id) REFERENCES case_info(case_id)
-    );
-
-    -- Logs de eventos de Windows
-    CREATE TABLE IF NOT EXISTS event_logs (
-        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        case_id INTEGER NOT NULL,
-        log_name TEXT,
-        record_id INTEGER,
-        source TEXT,
-        event_code INTEGER,
-        level TEXT,
-        message TEXT,
-        event_time DATETIME,
-        FOREIGN KEY (case_id) REFERENCES case_info(case_id)
-    );
-
-    -- Conexiones de red (si se extrae información de Prefetch o Volatility)
-    CREATE TABLE IF NOT EXISTS net_connections (
-        conn_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        case_id INTEGER NOT NULL,
-        process_name TEXT,
-        local_address TEXT,
-        local_port INTEGER,
-        remote_address TEXT,
-        remote_port INTEGER,
-        protocol TEXT,
-        timestamp DATETIME,
-        FOREIGN KEY (case_id) REFERENCES case_info(case_id)
-    );
 
     -- Línea de tiempo unificada
     CREATE TABLE IF NOT EXISTS unified_timeline (
@@ -139,9 +81,6 @@ def crear_base_de_datos(path_db):
     CREATE INDEX IF NOT EXISTS idx_suspicious ON filesystem_entry(is_suspicious);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_hash_sha256 ON file_hash(sha256);
     CREATE INDEX IF NOT EXISTS idx_timeline_time ON unified_timeline(timestamp);
-    CREATE INDEX IF NOT EXISTS idx_event_time ON event_logs(event_time);
-    CREATE INDEX IF NOT EXISTS idx_registry_modified ON registry_entries(last_modified);
-    CREATE INDEX IF NOT EXISTS idx_net_time ON net_connections(timestamp);
     """)
 
     conn.commit()
@@ -185,39 +124,6 @@ def insertar_file_hash(cursor, entry_id, sha256, md5=None):
     VALUES (?, ?, ?)
     """, (entry_id, sha256, md5))
 
-
-def insertar_registry_entry(cursor, case_id, hive, key_path, value_name,
-                            value_data, value_type, last_modified):
-    cursor.execute("""
-    INSERT INTO registry_entries (
-        case_id, hive, key_path, value_name, value_data, value_type, last_modified
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        case_id, hive, key_path, value_name, value_data, value_type, last_modified
-    ))
-
-
-def insertar_event_log(cursor, case_id, log_name, record_id, source, event_code,
-                       level, message, event_time):
-    cursor.execute("""
-    INSERT INTO event_logs (
-        case_id, log_name, record_id, source, event_code, level, message, event_time
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        case_id, log_name, record_id, source, event_code, level, message, event_time
-    ))
-
-def insertar_net_connection(cursor, case_id, process_name, local_address, local_port,
-                            remote_address, remote_port, protocol, timestamp):
-    cursor.execute("""
-    INSERT INTO net_connections (
-        case_id, process_name, local_address, local_port,
-        remote_address, remote_port, protocol, timestamp
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        case_id, process_name, local_address, local_port,
-        remote_address, remote_port, protocol, timestamp
-    ))
 
 
 def insertar_timeline_event(cursor, case_id, source, reference_id, description, timestamp):

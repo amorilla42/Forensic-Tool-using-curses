@@ -199,7 +199,7 @@ def extraer_system(db_path, hive_path):
 
     
 
-
+"""
     metadata, services, usb_devices, power = get_system_info_data(db_path)
     system_info = {
     "last_boot_time": metadata.get("last_boot_time", "Desconocido"),
@@ -215,4 +215,4 @@ def extraer_system(db_path, hive_path):
     layout.change_footer("Presiona TAB para alternar entre ventanas, 1-4 elegir ventana, ESC para salir")
     
     SystemInfoViewer(system_info, layout.body_win).render()
-
+"""

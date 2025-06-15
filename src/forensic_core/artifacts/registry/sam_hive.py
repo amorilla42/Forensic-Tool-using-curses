@@ -179,6 +179,6 @@ def visualizar_usuarios(db_path):
 
 def extraer_sam(db_path, sam_hive_path, system_hive_path):
     extraer_usuarios_sam(sam_hive_path, system_hive_path, db_path)
-    visualizar_usuarios(db_path)
+    #visualizar_usuarios(db_path)
 
     

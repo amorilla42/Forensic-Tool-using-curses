@@ -103,8 +103,10 @@ def extraer_software(software_path, db_path):
         product_id = cv.value("ProductId").value()
         install_date = datetime.utcfromtimestamp(cv.value("InstallDate").value()).isoformat()
         owner = cv.value("RegisteredOwner").value()
-        computer_name = reg.open("Microsoft\\Windows NT\\CurrentVersion\\Winlogon").value("DefaultDomainName").value()
-
+        try:
+            computer_name = reg.open("Microsoft\\Windows NT\\CurrentVersion\\Winlogon").value("DefaultDomainName").value()
+        except:
+            computer_name = reg.open("Microsoft\\Windows NT\\CurrentVersion\\Winlogon").value("DefaultUserName").value()
         cursor.execute("INSERT INTO system_info2 VALUES (?, ?, ?, ?, ?)",
                        (product_name, product_id, install_date, owner, computer_name))
     except Exception as e:

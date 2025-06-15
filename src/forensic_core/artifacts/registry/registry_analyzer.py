@@ -8,6 +8,7 @@ from forensic_core.artifacts.registry.sam_hive import extraer_sam
 from forensic_core.artifacts.registry.software_hive import extraer_software
 from forensic_core.artifacts.registry.system_hive import extraer_system
 from forensic_core.artifacts.registry.usernt_data_hive import extraer_ntuser_artefactos, visualizar_resumen_usuarios
+from forensic_core.artifacts.registry.usrclass_shellbags_hive import extraer_usrclass
 from forensic_core.e01_reader import open_e01_image
 import sqlite3
 from pathlib import Path
@@ -94,8 +95,11 @@ def generar_nombre_export_ntuser(ruta_completa):
         if not usuario:
             usuario = "desconocido"
         return f"{usuario}_NTUSER.DAT"
+    elif len(partes) >= 2 and partes[-1].lower() == "usrclass.dat":
+        usuario = partes[1].strip()
+        return f"{usuario}_USRCLASS.DAT"
     else:
-        return "ntuser_desconocido.dat"
+        return partes[-1].upper()
 
 def exportar_reg_usuario(caso_dir, ewf_path, partition_offset, paths):
     img = open_e01_image(ewf_path)
@@ -212,7 +216,8 @@ def analizar_hive(layout, archivo, db_path, dir_temp):
     elif archivo.endswith("NTUSER.DAT"):
         extraer_ntuser_artefactos(archivo, db_path)
         pass
-    elif archivo.endswith("DEFAULT"):
+    elif archivo.endswith("USRCLASS.DAT"):
+        extraer_usrclass(archivo, db_path, "Jimmy Wilson")
         pass
     elif archivo.endswith(".hive"):
         pass
@@ -238,8 +243,8 @@ def seleccionar_analizar_registros(layout, archivos, db_path, dir_temp, dir_expo
 
 
 def registry_analyzer(db_path, caso_dir):
-    exportar_hives_sistema(db_path, caso_dir)
-    exportar_hives_usuario(db_path, caso_dir)
+    #exportar_hives_sistema(db_path, caso_dir)
+    #exportar_hives_usuario(db_path, caso_dir)
     dir_temp = os.path.join(caso_dir, BASE_DIR_EXPORT_TEMP)
     dir_exportar = os.path.join(caso_dir, BASE_DIR_EXPORT)
     layout = AwesomeLayout()
@@ -263,7 +268,7 @@ def registry_analyzer(db_path, caso_dir):
             break
         # mostrar reporte de analisis de registros
         if selected_option == 0:
-            res = seleccionar_analizar_registros(layout, archivos, db_path, dir_temp, dir_exportar)
+            res = 0#seleccionar_analizar_registros(layout, archivos, db_path, dir_temp, dir_exportar)
 
         # visualizar contenido de registros
         elif selected_option == 1:

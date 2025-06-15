@@ -182,16 +182,6 @@ def insertar_file_hash(cursor, entry_id, sha256, md5=None):
     """, (entry_id, sha256, md5))
 
 
-def insertar_registry_entry(cursor, case_id, hive, key_path, value_name,
-                            value_data, value_type, last_modified):
-    cursor.execute("""
-    INSERT INTO registry_entries (
-        case_id, hive, key_path, value_name, value_data, value_type, last_modified
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (
-        case_id, hive, key_path, value_name, value_data, value_type, last_modified
-    ))
-
 
 def insertar_event_log(cursor, case_id, log_name, record_id, source, event_code,
                        level, message, event_time):

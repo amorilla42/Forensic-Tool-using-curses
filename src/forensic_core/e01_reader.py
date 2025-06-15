@@ -9,6 +9,7 @@ import pyewf
 
 from curses_ui.select_partition import select_partition
 from database.create_database import crear_base_de_datos, insertar_file_hash, insertar_filesystem_entry, insertar_timeline_event, insertar_partition_info, insertar_case_info
+from forensic_core.artifact_extractor import extraer_artefactos
 
 
 def open_e01_image(e01_path):
@@ -146,7 +147,7 @@ def calcular_hash_E01(ruta_E01, algoritmo="sha256", buffer_size=65536):
     return hash_obj.hexdigest()
 
 
-def digestE01(e01_path, stdscr, db_path, case_name):
+def digestE01(e01_path, stdscr, db_path, case_name, case_dir):
     
 
 
@@ -212,6 +213,8 @@ def digestE01(e01_path, stdscr, db_path, case_name):
         
         conn.commit()
         conn.close()
+
+        extraer_artefactos(db_path, case_dir)    
 
 
 

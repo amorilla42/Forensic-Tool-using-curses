@@ -10,6 +10,7 @@ from curses_ui.awesome_loader import CircleLoader
 
 from curses_ui.ui_handler import UIHandler
 from forensic_core.artifacts.registry.registry_analyzer import registry_analyzer
+from forensic_core.artifacts.registry.usernt_data_hive import visualizar_resumen_usuarios
 from forensic_core.search_files import search_files
 from forensic_core.e01_reader import digestE01
 from utils.create_and_load_cases import CASES_DIR, crear_directorio_caso, guardar_metadata, cargar_metadata
@@ -37,7 +38,7 @@ class ForensicTools:
         layout.change_footer("Presiona ESC para salir")
 
         self.e01_path = AwesomeInput(layout.body_win).render()
-        self.e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/raro.E01"
+        self.e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/portatil.E01"
         self.caso_dir = crear_directorio_caso(self.nombre_caso)
 
         self.db_path = os.path.join(self.caso_dir, f"{self.nombre_caso}.db")
@@ -48,7 +49,7 @@ class ForensicTools:
         x.render()
         
         try:
-            digestE01(self.e01_path, self.ui.stdscr, self.db_path, self.nombre_caso)
+            digestE01(self.e01_path, self.ui.stdscr, self.db_path, self.nombre_caso, self.caso_dir)
             x.clear()
         except Exception as e:
             self.ui.stdscr.addstr(5, 0, f"Error al montar la imagen: {e}")
@@ -116,7 +117,7 @@ class ForensicTools:
             elif key == curses.KEY_F5:
                 search_files(self.db_path, self.caso_dir)
             elif key == curses.KEY_F6:
-                self.export_image()
+                visualizar_resumen_usuarios(self.db_path, self.caso_dir)
             else:
                 self.ui.stdscr.addstr(0, 0, "Tecla no válida. Presiona ESC para salir.")
                 self.ui.stdscr.refresh()

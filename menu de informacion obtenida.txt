@@ -1,0 +1,30 @@
+
+
+INFORMACION DEL SISTEMA
+    INFO GENERAL: (sisteminfo y sisteminfo2)
+    Servicios (Tabla)
+    Dispositivos USB conectados
+    Esquemas de Energía
+    Programas instalados
+    Programas ejecutados al inicio
+    Comandos que se ejecutan una sola vez al inicio
+    Componentes de Windows instalados
+    Apps instaladas
+    Evaluación de Integridad de svchost_groups
+Informacion de usuarios locales del sistema
+    Artefactos de usuarios
+            Programas ejecutados (Menú Inicio)
+            Documentos recientes
+            Comandos ejecutados (Win+R)
+            Dispositivos conectados (USB y similares)
+            Archivos abiertos/guardados recientemente
+            Ejecuciones visualizadas por Explorer
+            Exportar toda la información a archivo .txt
+            Activar/Desactivar entradas del sistema en MuiCache
+            ShellBags
+            MRU (archivos usados recientemente)
+            TrayNotify: ejecutables e información del systray
+    Extracción y Cracking de Credenciales de Usuario
+
+
+
