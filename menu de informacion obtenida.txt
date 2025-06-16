@@ -1,7 +1,23 @@
 
 
+Digest del sistema de archivos
+Extraccion de artefactos de Registros de Windows
+Extraccion de artefactos del sistema de archivos de Windows
+Creacion de base de datos sqlite donde se almacena toda la informacion obtenida
+Busqueda de archivos en el sistema
+Exportacion de archivos al directorio del caso
+Exportacion de emails, extrayendo el contenido del email y los archivos adjuntos al directorio del caso
+Visualizacion del contenido y metadatos de todo tipo de archivos
+Visualizacion recursiva de archivos de registro, explorando subclaves, claves y mostrando los metadatos
+Exportacion de claves de registro a voluntad para posterior analisis
+Calculo de hash de todos los archivos del sistema
+Verificacion de archivos maliciosos usando la API de virustotal a voluntad del usuario
+
+
+ARTEFACTOS DEL SISTEMA EXTRAIDOS Y QUE SE MUESTRAN EN LAS DISTINTAS PANTALLAS
+
 INFORMACION DEL SISTEMA
-    INFO GENERAL: (sisteminfo y sisteminfo2)
+    INFO GENERAL del sistema: tablas(sisteminfo y sisteminfo2)
     Servicios (Tabla)
     Dispositivos USB conectados
     Esquemas de Energía
@@ -24,7 +40,7 @@ Informacion de usuarios locales del sistema
             ShellBags
             MRU (archivos usados recientemente)
             TrayNotify: ejecutables e información del systray
-    Extracción y Cracking de Credenciales de Usuario
+    Extracción y Cracking de Credenciales de Usuario usando hashcat y el diccionario rockyou.txt
 
 
 
