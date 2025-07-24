@@ -166,6 +166,7 @@ def visualizar_usuarios(db_path):
             panel.render()
             key = layout.body_win.getch()
             if key  == 27:  # ESC
+                layout.clear()
                 break
             if key == ord('c'):
                 layout.change_header("Crackeando contraseña...")

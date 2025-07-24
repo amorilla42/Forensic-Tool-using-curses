@@ -1,6 +1,7 @@
 import curses
 import os
 import sqlite3
+from curses_ui.artifact_viewer_menu import artifact_menu
 from curses_ui.file_browser import FileBrowser
 
 from curses_ui.awesome_menu import AwesomeMenu
@@ -10,6 +11,7 @@ from curses_ui.awesome_loader import CircleLoader
 
 from curses_ui.ui_handler import UIHandler
 from forensic_core.artifacts.registry.registry_analyzer import registry_analyzer
+from forensic_core.artifacts.registry.sam_hive import visualizar_usuarios
 from forensic_core.artifacts.registry.usernt_data_hive import visualizar_resumen_usuarios
 from forensic_core.search_files import search_files
 from forensic_core.e01_reader import digestE01
@@ -101,7 +103,7 @@ class ForensicTools:
 
         while True:
             self.ui.draw_header("ANALIZADOR FORENSE E01")
-            self.ui.draw_footer("F1: Ayuda | F2: Cargar imagen | F3: Analizar Registros | F5: Buscar | F6: Exportar | ESC: Salir")       
+            self.ui.draw_footer("F1: Ayuda | F2: Usuarios | F3: Visualizar Registros | F5: Buscar | F6: Artefactos | ESC: Salir")       
 
             key = self.ui.stdscr.getch()
             if key == 27: # Escape key
@@ -111,13 +113,13 @@ class ForensicTools:
                 self.ui.stdscr.refresh()
                 self.ui.stdscr.getch()
             elif key == curses.KEY_F2:
-                self.load_image()
+                visualizar_usuarios(self.db_path)
             elif key == ord('a'):    #####curses.KEY_F3:
                 registry_analyzer(self.db_path, self.caso_dir)
             elif key == curses.KEY_F5:
                 search_files(self.db_path, self.caso_dir)
-            elif key == curses.KEY_F6:
-                visualizar_resumen_usuarios(self.db_path, self.caso_dir)
+            elif key == ord('c'): #####curses.KEY_F6:
+                artifact_menu(self.db_path, self.caso_dir)
             else:
                 self.ui.stdscr.addstr(0, 0, "Tecla no válida. Presiona ESC para salir.")
                 self.ui.stdscr.refresh()
