@@ -74,13 +74,7 @@ def search_files(db_path, case_dir):
             path=selected_file[2],
             layout=layout
         )
-        #####
-        metadata, content_lines = get_info_file(
-            ewf_path=path[0][0],
-            partition_offset=partition_offset_bytes,
-            inode=selected_file[7],
-            layout=layout
-        )
+
         extraer = FileViewerPanel(metadata2, content_lines2, layout.body_win).render()
         if extraer:
             exportar_archivo(
@@ -99,39 +93,6 @@ def search_files(db_path, case_dir):
         return
     selected_file = results[selected]
     return selected_file
-
-def extract_file_info(img, partition_offset, inode, layout):
-    try:
-        fs = pytsk3.FS_Info(img, offset=partition_offset)
-        file_obj = fs.open_meta(inode=inode)
-
-        meta = file_obj.info.meta
-        if meta is None or meta.size is None:
-            raise ValueError("No se puede obtener el contenido del archivo: tamaño no definido.")
-
-        content = b""
-        size = meta.size
-        if not isinstance(size, int):  # Verificar que size es un entero
-            raise ValueError("Tamaño del archivo no es válido.")
-        
-        if size > 10 * 1024 * 1024:
-            raise ValueError("Archivo muy grande para mostrarlo por pantalla.")
-
-        offset = 0
-        while offset < size:
-            chunk = file_obj.read_random(offset, min(4096, size - offset))
-            if not isinstance(chunk, bytes):
-                raise ValueError(f"Esperado un objeto 'bytes', pero se encontró {type(chunk)}.")
-            if not chunk:
-                break
-            content += chunk
-            offset += len(chunk)
-
-        return file_obj, content
-
-    except Exception as e:
-        layout.change_footer(f"Error al extraer el archivo: {str(e)}")
-        return None, None
 
 def extract_file_info2(img, partition_offset, path, layout):
     try:
@@ -188,17 +149,6 @@ def prepare_content_lines(content: bytes) -> list[str]:
     except UnicodeDecodeError:
         return [content[i:i+16].hex() for i in range(0, len(content), 16)]
 
-def get_info_file(ewf_path, partition_offset, inode, layout):
-    img = open_e01_image(ewf_path)
-    file_obj, content = extract_file_info(img, partition_offset, inode, layout)
-
-    # Si ocurrió un error, no continuar procesando
-    if file_obj is None or content is None:
-        return {}, []
-
-    metadata = get_file_metadata(file_obj)
-    content_lines = prepare_content_lines(content)
-    return metadata, content_lines
 
 def get_info_file2(ewf_path, partition_offset, path, layout):
     img = open_e01_image(ewf_path)

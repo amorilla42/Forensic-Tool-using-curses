@@ -4,6 +4,7 @@ import pytsk3
 import os
 from pathlib import Path
 import sqlite3
+from forensic_core.artifacts.deleted_files.extract_info_deleted_files import escanear_y_procesar_archivos_borrados
 from forensic_core.artifacts.registry.sam_hive import extraer_sam
 from forensic_core.artifacts.registry.software_hive import extraer_software
 from forensic_core.artifacts.registry.system_hive import extraer_system
@@ -98,8 +99,9 @@ def exportar_archivos_interesantes(db_path, caso_dir):
                 path=result[2],
                 dir_interesantes = dir_interesantes
             )
-    
     conn.close()
+
+    escanear_y_procesar_archivos_borrados(dir_interesantes, dir_interesantes)
 
 
     

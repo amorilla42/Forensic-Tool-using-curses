@@ -46,7 +46,7 @@ class InterestingFilesViewer(Renderizable):
         self.dir_interesantes = dir_interesantes
         self.categories = {
             '.pdf': [], '.doc': [], '.txt': [], '.snt': [], '.pst': [],
-            '.ost': [], '.zip': [], '.rar': [], '.7z': []
+            '.ost': [], '.zip': [], '.rar': [], '.7z': [], 'Papelera restaurada': []
         }
         self.selected_index = 0
         self.current_category = None
@@ -56,9 +56,19 @@ class InterestingFilesViewer(Renderizable):
     def _load_files(self):
         for root, _, files in os.walk(self.dir_interesantes):
             for f in files:
+
+                path = os.path.join(root, f)
+
+                if ".meta." in f:
+                    continue
+                if f.startswith("$I") or f.startswith("$R"):
+                    continue
+                if os.path.exists(path + ".meta.txt"):
+                    self.categories['Papelera restaurada'].append(path)
+                    continue
                 ext = os.path.splitext(f)[1].lower()
                 if ext in self.categories:
-                    self.categories[ext].append(os.path.join(root, f))
+                    self.categories[ext].append(path)
 
     def clear(self):
         self.win.clear()
@@ -106,6 +116,12 @@ class InterestingFilesViewer(Renderizable):
         rtf = re.sub(r'{|}|\\', '', rtf)
         rtf = rtf.replace('\r\n', '\n').replace('\r', '\n')
         return rtf.strip()
+    
+    def _buscar_metadatos_asociados(self, filepath):
+        meta_path = filepath + ".meta.txt"
+        if os.path.exists(meta_path):
+            return meta_path
+        return None
 
     def handle_input(self, key):
         if self.current_category is None:
@@ -137,16 +153,70 @@ class InterestingFilesViewer(Renderizable):
                 self.scroll_offset = 0
             elif key in [10, 13]:
                 filepath = archivos[self.selected_index]
-                try:
-                    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
-                        content = f.read()
-                    if filepath.endswith(".snt"):
-                       content = self._rtf_to_plain_text(content)
-                except Exception as e:
-                    content = f"[!] Error al abrir el archivo: {e}"
+                meta_path = self._buscar_metadatos_asociados(filepath)
 
-                show_scrollable_file_popup(self.win, content, os.path.basename(filepath))
+                if meta_path:
+                    opciones = ["Ver contenido del archivo", "Ver metadatos asociados"]
+                    seleccion = 0
 
+                    while True:
+                        self.win.clear()
+                        self.win.box()
+                        self.win.addstr(1, 4, f"Archivo: {os.path.basename(filepath)}", curses.A_BOLD)
+                        for i, opt in enumerate(opciones):
+                            attr = curses.A_REVERSE if i == seleccion else curses.A_NORMAL
+                            self.win.addstr(3 + i, 6, opt, attr)
+                        self.win.addstr(self.win.getmaxyx()[0] - 2, 4, "ENTER: Seleccionar, ↑/↓: Mover, q o ESC: Cancelar")
+                        self.win.refresh()
+
+                        key2 = self.win.getch()
+                        if key2 in [ord("q"), 27]:
+                            break
+                        elif key2 == curses.KEY_UP:
+                            seleccion = max(seleccion - 1, 0)
+                        elif key2 == curses.KEY_DOWN:
+                            seleccion = min(seleccion + 1, len(opciones) - 1)
+                        elif key2 in [10, 13]:
+                            target_path = filepath if seleccion == 0 else meta_path
+                            try:
+                                with open(target_path, "r", encoding="utf-8", errors="replace") as f:
+                                    content = f.read()
+                                if target_path.endswith(".snt"):
+                                    content = self._rtf_to_plain_text(content)
+                                if target_path.endswith(".pdf"):
+                                    content = extraer_texto_pdf(target_path)
+                            except Exception as e:
+                                content = f"[!] Error al abrir el archivo: {e}"
+
+                            show_scrollable_file_popup(self.win, content, os.path.basename(target_path))
+                            break
+
+                else:
+                    # Caso normal: no hay metadatos, mostrar directamente el archivo
+                    try:
+                        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+                            content = f.read()
+                        if filepath.endswith(".snt"):
+                            content = self._rtf_to_plain_text(content)
+                        if filepath.endswith(".pdf"):
+                            content = extraer_texto_pdf(filepath)
+                    except Exception as e:
+                        content = f"[!] Error al abrir el archivo: {e}"
+
+                    show_scrollable_file_popup(self.win, content, os.path.basename(filepath))
+
+
+
+
+def extraer_texto_pdf(path_pdf):
+    from pdfminer.high_level import extract_text
+    import logging
+    logging.getLogger("pdfminer").setLevel(logging.ERROR)
+    try:
+        texto = extract_text(path_pdf)
+        return texto.strip() or "[PDF sin texto visible]"
+    except Exception as e:
+        return f"[!] Error al leer PDF: {e}"
 
 
 def _mostrar_info_extra(file_path, db_path):

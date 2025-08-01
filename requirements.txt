@@ -46,6 +46,7 @@ libvshadow-python==20240504
 libvslvm-python==20240504
 MarkupSafe==3.0.2
 more-itertools==5.0.0
+pdfminer.six==20250506
 psutil==7.0.0
 pyasn1==0.6.1
 pyasn1_modules==0.4.2
