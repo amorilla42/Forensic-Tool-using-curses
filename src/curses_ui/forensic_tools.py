@@ -15,7 +15,7 @@ from forensic_core.artifacts.registry.sam_hive import visualizar_usuarios
 from forensic_core.artifacts.registry.usernt_data_hive import visualizar_resumen_usuarios
 from forensic_core.search_files import search_files
 from forensic_core.e01_reader import digestE01
-from utils.create_and_load_cases import CASES_DIR, crear_directorio_caso, guardar_metadata, cargar_metadata
+from utils.create_and_load_cases import CASES_DIR, crear_directorio_caso
 from database.create_database import crear_base_de_datos
 
 

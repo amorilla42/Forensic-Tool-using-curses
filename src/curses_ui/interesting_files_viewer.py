@@ -8,14 +8,16 @@ from forensic_core.search_files import get_info_file2
 from utils.text_sanitizer import TextSanitizer
 from .renderizable import Renderizable
 
-def show_scrollable_file_popup(win, content, title=" Contenido del archivo ", footer=" ↑/↓ para desplazarse, q o ESC para salir "):
+def show_scrollable_file_popup(win, content, title=" Contenido del archivo ", footer=" ↑/↓ para desplazarse verticalmente, ←/→ horizontalmente, q o ESC para salir "):
     max_y, max_x = win.getmaxyx()
     popup = curses.newwin(max_y, max_x, 3, 0)
     popup.keypad(True)
 
     lines = content.split("\n")
     scroll_offset = 0
+    horizontal_offset = 0 
     visible_height = max_y - 3
+    max_line_length = max(len(TextSanitizer.clean(line)) for line in lines)
 
     while True:
         popup.clear()
@@ -26,7 +28,16 @@ def show_scrollable_file_popup(win, content, title=" Contenido del archivo ", fo
         visible_lines = lines[scroll_offset:scroll_offset + visible_height]
         for i, line in enumerate(visible_lines):
             linesafe = TextSanitizer.clean(line)
-            popup.addstr(i + 1, 2, linesafe[:max_x - 4])
+            visible_width = max_x - 4  # espacio horizontal disponible
+            line_segment = linesafe[horizontal_offset:horizontal_offset + visible_width]
+
+            # Indicadores visuales de scroll
+            if horizontal_offset > 0:
+                line_segment = "←" + line_segment[1:]  # muestra flecha izquierda
+            if horizontal_offset + visible_width < len(linesafe):
+                line_segment = line_segment[:-1] + "→"  # muestra flecha derecha
+
+            popup.addstr(i + 1, 2, line_segment)
 
         popup.refresh()
         key = popup.getch()
@@ -37,7 +48,10 @@ def show_scrollable_file_popup(win, content, title=" Contenido del archivo ", fo
             scroll_offset -= 1
         elif key == curses.KEY_DOWN and scroll_offset + visible_height < len(lines):
             scroll_offset += 1
-
+        elif key == curses.KEY_LEFT and horizontal_offset > 0:
+            horizontal_offset -= 4  # cantidad de columnas a desplazar
+        elif key == curses.KEY_RIGHT and horizontal_offset + max_x - 4 < max_line_length:
+            horizontal_offset += 4
 
 class InterestingFilesViewer(Renderizable):
     def __init__(self, win, dir_interesantes, db_path):

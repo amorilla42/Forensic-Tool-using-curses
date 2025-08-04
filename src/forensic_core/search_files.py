@@ -122,6 +122,16 @@ def extract_file_info2(img, partition_offset, path, layout):
         return None, None
     
 
+
+def format_timestamp(ts):
+    from datetime import datetime
+    try:
+        if ts == 0:
+            return "N/A"
+        return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+    except (OSError, OverflowError, ValueError, TypeError):
+        return "Inválido"
+
 def get_file_metadata(file_obj):
     meta = file_obj.info.meta
     if file_obj.info.name is not None and file_obj.info.name.name is not None:
@@ -132,10 +142,10 @@ def get_file_metadata(file_obj):
         "Nombre": name,
         "Inode": meta.addr,
         "Tama\u00f1o": meta.size,
-        "Creacion": str(meta.crtime),
-        "Modificacion": str(meta.mtime),
-        "Acceso": str(meta.atime),
-        "Cambio": str(meta.ctime),
+        "Creacion": format_timestamp(meta.crtime),
+        "Modificacion": format_timestamp(meta.mtime),
+        "Acceso": format_timestamp(meta.atime),
+        "Cambio": format_timestamp(meta.ctime),
         "Modo": hex(meta.mode),
         "UID": meta.uid,
         "GID": meta.gid
