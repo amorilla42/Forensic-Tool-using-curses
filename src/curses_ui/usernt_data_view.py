@@ -183,7 +183,14 @@ def format_mountpoints2_table(rows, screen_width=120):
 
     return "\n".join(output)
 
-def format_shellbags_table(rows, screen_width=120):
+def recortar_columna_shellbag_table(texto, ancho):
+    return texto if len(texto) <= ancho else texto[:ancho-1] + "…"
+
+def format_shellbags_table(rows, screen_width=120, selected_index=None, show_popup=False, win=None):
+    """
+    Muestra la tabla de ShellBags con columnas recortadas.
+    Si show_popup=True y win no es None, abre un popup con la fila seleccionada.
+    """
     path_w = int(screen_width * 0.35)
     key_w = int(screen_width * 0.40)
     time_w = screen_width - (path_w + key_w + 6)
@@ -194,19 +201,88 @@ def format_shellbags_table(rows, screen_width=120):
     output.append(header)
     output.append(separator)
 
-    for row in rows:
+    for idx, row in enumerate(rows):
         if len(row) != 4:
             continue
         _, path, key_path, timestamp = map(str, row)
 
-        # Calcular la profundidad por número de barras invertidas
-        depth = path.count("\\")
-        indent = "  " * depth  # 2 espacios por nivel
-        path_indented = indent + path.replace("\n", " ")
+        # Recortar para que encaje en la tabla
+        path_col = recortar_columna_shellbag_table(path.replace("\n", " "), path_w)
+        key_col = recortar_columna_shellbag_table(key_path, key_w)
+        time_col = recortar_columna_shellbag_table(timestamp, time_w)
 
-        output.append(f"{path_indented:<{path_w}}│ {key_path:<{key_w}}│ {timestamp:<{time_w}}")
+        output.append(f"{path_col:<{path_w}}│ {key_col:<{key_w}}│ {time_col:<{time_w}}")
+
+    # Mostrar popup de detalle si procede
+    if show_popup and win is not None and selected_index is not None and 0 <= selected_index < len(rows):
+        import textwrap
+        _, full_path, full_key, full_time = map(str, rows[selected_index])
+
+        max_y, max_x = win.getmaxyx()
+        wrap_width = max_x - 4  # margen para bordes del popup
+
+        full_path_wrapped = textwrap.fill(full_path, width=wrap_width)
+        full_key_wrapped = textwrap.fill(full_key, width=wrap_width)
+        full_time_wrapped = textwrap.fill(full_time, width=wrap_width)
+
+        contenido = (
+            f"Ruta completa:\n{full_path_wrapped}\n\n"
+            f"Clave de registro:\n{full_key_wrapped}\n\n"
+            f"Marca de tiempo:\n{full_time_wrapped}"
+        )
+        show_scrollable_popup(win, contenido, "Detalle ShellBag")
 
     return "\n".join(output)
+
+
+
+
+
+def recortar_columna_mru(texto, ancho):
+    return texto if len(texto) <= ancho else texto[:ancho-1] + "…"
+
+def format_mru_table(rows, screen_width=120, selected_index=None, show_popup=False, win=None):
+    tipo_w = int(screen_width * 0.10)
+    nombre_w = int(screen_width * 0.30)
+    key_w = int(screen_width * 0.35)
+    time_w = screen_width - (tipo_w + nombre_w + key_w + 6)
+
+    output = []
+    header = f"{'Tipo MRU':<{tipo_w}}│ {'Nombre archivo':<{nombre_w}}│ {'Clave registro':<{key_w}}│ {'Timestamp':<{time_w}}"
+    separator = "─" * len(header)
+    output.append(header)
+    output.append(separator)
+
+    for idx, row in enumerate(rows):
+        if len(row) != 6:
+            continue
+        _, mru_type, _, name, key_path, timestamp = map(str, row)  # ignoramos extensión
+
+        tipo_col = recortar_columna_mru(mru_type, tipo_w)
+        name_col = recortar_columna_mru(name, nombre_w)
+        key_col = recortar_columna_mru(key_path, key_w)
+        time_col = recortar_columna_mru(timestamp, time_w)
+
+        output.append(f"{tipo_col:<{tipo_w}}│ {name_col:<{nombre_w}}│ {key_col:<{key_w}}│ {time_col:<{time_w}}")
+
+    # POPUP opcional
+    if show_popup and win and selected_index is not None and 0 <= selected_index < len(rows):
+        import textwrap
+        _, mru_type, _, name, key_path, timestamp = map(str, rows[selected_index])
+        max_y, max_x = win.getmaxyx()
+        wrap = lambda t: textwrap.fill(t, max_x - 4)
+
+        detalle = (
+            f"Tipo MRU:\n{mru_type}\n\n"
+            f"Nombre del archivo:\n{wrap(name)}\n\n"
+            f"Clave de registro:\n{wrap(key_path)}\n\n"
+            f"Timestamp:\n{timestamp}"
+        )
+        show_scrollable_popup(win, detalle, title="Detalle MRU")
+
+    return "\n".join(output)
+
+
 
 
 
@@ -361,8 +437,8 @@ class UserntDataViewer(Renderizable):
         if index == 0:
             max_y, max_x = self.win.getmaxyx()
             #TODO: BORRAR DESPUES
-            #from forensic_core.artifact_extractor import extraer_artefactos
-            #extraer_artefactos(self.db_path, os.path.dirname(self.db_path))
+            from forensic_core.artifact_extractor import extraer_artefactos
+            extraer_artefactos(self.db_path, os.path.dirname(self.db_path))
             info = format_userassist_table([", ".join(str(col) for col in row) for row in rows], screen_width=max_x - 4)
         
         elif index == 1:
@@ -376,11 +452,85 @@ class UserntDataViewer(Renderizable):
             rows = list(dict.fromkeys(rows))   # elimina duplicados manteniendo orden
             info = format_mountpoints2_table(rows, screen_width=max_x - 4)
         
-        elif index == 6:
-            max_y, max_x = self.win.getmaxyx()
-            info = format_shellbags_table(rows, screen_width=max_x - 4)
+        elif index == 6:  # ShellBags
+            selected = 0
+            scroll_offset = 0
+            while True:
+                self.win.clear()
+                max_y, max_x = self.win.getmaxyx()
+                self.win.box()
+                
+                header_text = " ShellBags "
+                self.win.addstr(0, (max_x - len(header_text)) // 2, header_text, curses.A_BOLD)
+
+                footer_text = " ↑/↓: Navegar  ENTER: Detalle  ESC: Salir "
+                self.win.addstr(max_y - 1, (max_x - len(footer_text)) // 2, footer_text, curses.A_BOLD)
+
+                tabla = format_shellbags_table(rows, screen_width=max_x - 4)
+                lineas = tabla.split("\n")
+
+                visible_height = max_y - 2  # sin header/footer
+
+                if selected < scroll_offset:
+                    scroll_offset = selected
+                elif selected >= scroll_offset + visible_height:
+                    scroll_offset = selected - visible_height + 1
+
+                visibles = lineas[scroll_offset:scroll_offset + visible_height]
+
+                for idx, line in enumerate(visibles):
+                    y = idx + 1
+                    if scroll_offset + idx == selected:
+                        self.win.addstr(y, 2, line[:max_x - 4], curses.A_REVERSE)
+                    else:
+                        self.win.addstr(y, 2, line[:max_x - 4])
+
+                self.win.refresh()
+                key = self.win.getch()
+
+                if key == curses.KEY_UP:
+                    selected = (selected - 1) % len(rows)
+                elif key == curses.KEY_DOWN:
+                    selected = (selected + 1) % len(rows)
+                elif key in (10, 13):  # ENTER
+                    format_shellbags_table(rows, screen_width=max_x - 4, selected_index=selected -2, show_popup=True, win=self.win)
+                elif key in (27, ord("q")):
+                    return
+
+        elif index == 7:  # MRU entries
+            selected = 0
+            while True:
+                self.win.clear()
+                max_y, max_x = self.win.getmaxyx()
+                self.win.box()
+
+                self.win.addstr(0, (max_x - len(" MRU ")) // 2, " MRU ", curses.A_BOLD)
+                self.win.addstr(max_y - 1, (max_x - len(" ↑/↓: Navegar  ENTER: Detalle  ESC: Salir ")) // 2,
+                                " ↑/↓: Navegar  ENTER: Detalle  ESC: Salir ", curses.A_BOLD)
+
+                tabla = format_mru_table(rows, screen_width=max_x - 4, selected_index=selected)
+
+                for idx, line in enumerate(tabla.split("\n")):
+                    y = idx + 1
+                    if idx - 2 == selected:
+                        self.win.addstr(y, 2, line, curses.A_REVERSE)
+                    else:
+                        self.win.addstr(y, 2, line)
+
+                self.win.refresh()
+                key = self.win.getch()
+
+                if key == curses.KEY_UP:
+                    selected = (selected - 1) % len(rows)
+                elif key == curses.KEY_DOWN:
+                    selected = (selected + 1) % len(rows)
+                elif key in (10, 13):
+                    format_mru_table(rows, screen_width=max_x - 4, selected_index=selected, show_popup=True, win=self.win)
+                elif key in (27, ord("q")):
+                    return
+
         else:
-            info = f"{section_titles[index]}\nUsuario: {username}\n\n"
+            info = f" {section_titles[index]} \nUsuario: {username}\n\n"
             if not rows:
                 info += "(Sin datos disponibles)"
             else:

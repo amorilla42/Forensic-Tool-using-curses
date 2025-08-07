@@ -73,6 +73,55 @@ def extraer_nombre_archivo_de_binario(data: bytes, min_len=4) -> str | None:
     return None
 
 
+def extraer_nombres_desde_binario(data):
+    import re
+    nombres = []
+    # Busca cadenas Unicode mínimas codificadas como UTF-16LE
+    unicode_strings = re.findall(b'(?:[\x20-\x7e]\x00){3,}', data)
+    for u in unicode_strings:
+        try:
+            dec = u.decode('utf-16le').strip('\x00')
+            if dec.lower().endswith(('.lnk', '.url', '.exe')) or "://" in dec:
+                nombres.append(dec)
+        except:
+            continue
+    return nombres
+
+
+
+def limpiar_key_path_desktop_items(path):
+    import re
+    return re.sub(r"CMI-CreateHive\{[A-F0-9\-]+\}", "NTUSER.DAT", path, flags=re.IGNORECASE)
+
+
+def extraer_shellbags_items_desktop(reg, user, conn):
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shellbags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user TEXT,
+            path TEXT,
+            key_path TEXT,
+            timestamp TEXT,
+            FOREIGN KEY(user) REFERENCES users(username)
+        )
+    ''')
+    conn.commit()
+
+    try:
+        key = reg.open("Software\\Microsoft\\Windows\\Shell\\Bags\\1\\Desktop")
+        for value in key.values():
+            if value.name().startswith("ItemPos"):
+                data = value.value()
+                nombres = extraer_nombres_desde_binario(data)
+                for nombre in nombres:
+                    pathlimpio = limpiar_key_path_desktop_items(key.path())
+                    cursor.execute('''
+                        INSERT INTO shellbags (user, path, key_path, timestamp)
+                        VALUES (?, ?, ?, ?)
+                    ''', (user, nombre, pathlimpio, key.timestamp().isoformat()))
+    except Exception as e:
+        print(f"[!] Error al procesar ItemPos en Bags\\1\\Desktop para {user}: {e}")
 
 
 # Extraer todos los artefactos relevantes de NTUSER.DAT
@@ -256,39 +305,65 @@ def extraer_ntuser_artefactos(ntuser_path, db_path):
     except Exception as e:
         print(f"[!] Error extrayendo MUICache: {e}")
 
+
+
     # OpenSavePidlMRU y LastVisitedPidlMRU
+    def _targets_for_comdlg(subkey):
+        """Devuelve la lista de claves a recorrer:
+        - Si hay subclaves (OpenSave*), devuelve esas subclaves.
+        - Si no hay subclaves (LastVisitedPidlMRU / LastVisitedMRU), devuelve [subkey].
+        """
+        children = list(subkey.subkeys())
+        return children if children else [subkey]
+
     try:
-        comdlg_key = reg.open("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ComDlg32")
-        for subkey_name in ["OpenSavePidlMRU", "LastVisitedPidlMRU"]:
+        comdlg_key = reg.open(r"Software\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32")
+
+        posibles = ["OpenSavePidlMRU", "LastVisitedPidlMRU", "OpenSaveMRU", "LastVisitedMRU"]
+
+        # Intenta abrir cada una y guarda las que existan
+        presentes = []
+        for name in posibles:
             try:
-                subkey = comdlg_key.subkey(subkey_name)
-                for sk in subkey.subkeys():
-                    ext = sk.name()
-                    for val in sk.values():
-                        if not val.name().startswith("MRUList"):
-                            try:
-                                raw_value = val.value()
-                                if isinstance(raw_value, bytes):
-                                    filename = extraer_nombre_archivo_de_binario(raw_value)
-                                else:
-                                    filename = str(raw_value)
-                                cursor.execute('''
-                                    INSERT INTO mru_entries (user, mru_type, extension, file_name, key_path, timestamp)
-                                    VALUES (?, ?, ?, ?, ?, ?)
-                                ''', (
-                                    username,
-                                    subkey_name,
-                                    ext,
-                                    filename,
-                                    sk.path(),
-                                    sk.timestamp().isoformat()
-                                ))
-                            except Exception:
-                                continue
+                presentes.append((name, comdlg_key.subkey(name)))
             except Registry.RegistryKeyNotFoundException:
-                continue
+                pass
+
+        for subkey_name, subkey in presentes:
+            for sk in _targets_for_comdlg(subkey):
+                # En LastVisited* no hay extensión: deja string vacío
+                ext = "" if sk is subkey else sk.name()
+
+                for val in sk.values():
+                    if val.name().startswith("MRUList"):
+                        continue
+                    try:
+                        raw_value = val.value()
+                        if isinstance(raw_value, (bytes, bytearray)):
+                            filename = extraer_nombre_archivo_de_binario(raw_value)
+                            if not filename:
+                                continue
+                        else:
+                            filename = str(raw_value)
+
+                        cursor.execute("""
+                            INSERT INTO mru_entries (user, mru_type, extension, file_name, key_path, timestamp)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (
+                            username,
+                            subkey_name,
+                            ext,
+                            filename,
+                            sk.path(),
+                            sk.timestamp().isoformat()
+                        ))
+                    except Exception:
+                        continue
     except Registry.RegistryKeyNotFoundException:
-        print(f"[!] MRU no encontrado para {username}")
+        pass
+
+    # Shellbags
+    extraer_shellbags_items_desktop(reg, username, conn)
 
     conn.commit()
     conn.close()

@@ -52,6 +52,8 @@ def crear_base_datos(db_path):
 
 
 
+
+
 def extraer_shellbags(reg, user, conn):
     cursor = conn.cursor()
     try:
@@ -60,20 +62,58 @@ def extraer_shellbags(reg, user, conn):
     except Registry.RegistryKeyNotFoundException:
         print(f"[!] ShellBagMRU no encontrado para {user}")
 
+
+
+
+def extraer_nombre_shell_item(data):
+    import re
+    try:
+        # Buscar cadenas UTF-16LE legibles de al menos 3 caracteres
+        matches = re.findall(b'(?:[\x20-\x7e]\x00){3,}', data)
+        cadenas = []
+        for m in matches:
+            texto = m.decode('utf-16le').strip('\x00')
+            if texto and not texto.startswith("::{"):  # evitar GUIDs
+                cadenas.append(texto)
+        if cadenas:
+            # Devuelve todas concatenadas o solo la primera
+            return " / ".join(cadenas)
+    except:
+        pass
+    return None
+
+
+
+def limpiar_key_path_shellbags_usrclass(path):
+    import re
+    # Sustituir cualquier SID + "_Classes" por "UsrClass.dat"
+    return re.sub(
+        r"S-1-5-21-\d+-\d+-\d+-\d+_Classes",
+        "UsrClass.dat",
+        path
+    )
+
 def procesar_bagmru(key, current_path, user, cursor):
     for value in key.values():
-        if value.name() == "NodeSlot" or value.name() == "MRUListEx":
+        if value.name() in ("NodeSlot", "MRUListEx"):
             continue
         try:
+            nombre_real = extraer_nombre_shell_item(value.value())
+            if not nombre_real:
+                continue
+            
+            key_path = limpiar_key_path_shellbags_usrclass(key.path())
+
             cursor.execute('''
                 INSERT INTO shellbags (user, path, key_path, timestamp)
                 VALUES (?, ?, ?, ?)
-            ''', (user, f"{current_path}\\{value.name()}", key.path(), key.timestamp().isoformat()))
+            ''', (user, nombre_real, key_path, key.timestamp().isoformat()))
         except Exception:
             continue
 
     for subkey in key.subkeys():
         procesar_bagmru(subkey, f"{current_path}\\{subkey.name()}", user, cursor)
+
 
 
 
