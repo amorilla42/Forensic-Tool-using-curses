@@ -9,7 +9,7 @@ from .renderizable import Renderizable
 
 def show_scrollable_popup(win, text, title=" Detalles ", footer=" ↑/↓ para desplazarse, ESC para salir "):
     max_y, max_x = win.getmaxyx()
-    popup = curses.newwin(max_y, max_x, 0, 0)
+    popup = curses.newwin(max_y, max_x, 3, 0)
     popup.keypad(True)
 
     lines = text.split("\n")
@@ -110,6 +110,103 @@ def parse_userassist_line(line):
         return None
 
 
+
+def is_printable(s):
+    import string
+    return all(c in string.printable for c in s)
+
+
+def format_recent_docs_table(rows, screen_width=120):
+    ext_w = int(screen_width * 0.15)
+    nombre_w = screen_width - ext_w - 5
+
+    output = []
+    header = f"{'Extensión':<{ext_w}}│ {'Nombre del documento':<{nombre_w}}"
+    separator = "─" * len(header)
+    output.append(header)
+    output.append(separator)
+
+    rows = [r for r in rows if all(r) and is_printable(r[1])]
+    rows = list(dict.fromkeys(rows))
+
+    normalized = []
+    for ext, name in rows:
+        if ext.lower() == "folder":
+            ext = "Carpeta"
+        normalized.append((ext, name))
+
+    for ext, name in normalized:
+        output.append(f"{ext:<{ext_w}}│ {name:<{nombre_w}}")
+
+    return "\n".join(output)
+
+
+
+
+
+def format_mountpoints2_table(rows, screen_width=120):
+    from utils.guid_aliases import traducir_guids
+
+    def is_guid(text):
+        return (
+            isinstance(text, str)
+            and text.startswith("{")
+            and text.endswith("}")
+            and len(text) >= 36
+        )
+
+    output = []
+    header = f"{'Identificador / Ruta':<{screen_width - 4}}"
+    separator = "─" * len(header)
+    output.append(header)
+    output.append(separator)
+
+    vistos = set()
+    rutas_traducidas = []
+
+    for ruta, _, _ in rows:
+        if ruta is None or str(ruta).strip() == "":
+            continue
+        ruta_str = str(ruta).strip()
+        if ruta_str in vistos:
+            continue
+        vistos.add(ruta_str)
+
+        traducida = traducir_guids(ruta_str)
+        rutas_traducidas.append((ruta_str, traducida))
+
+    # Ordenar: primero alias legibles, luego GUID puros
+    rutas_traducidas.sort(key=lambda x: is_guid(x[1]))
+
+    for _, traducida in rutas_traducidas:
+        output.append(f"{traducida:<{screen_width - 4}}")
+
+    return "\n".join(output)
+
+def format_shellbags_table(rows, screen_width=120):
+    path_w = int(screen_width * 0.35)
+    key_w = int(screen_width * 0.40)
+    time_w = screen_width - (path_w + key_w + 6)
+
+    output = []
+    header = f"{'Ruta':<{path_w}}│ {'Clave de registro':<{key_w}}│ {'Marca de tiempo':<{time_w}}"
+    separator = "─" * len(header)
+    output.append(header)
+    output.append(separator)
+
+    for row in rows:
+        if len(row) != 4:
+            continue
+        _, path, key_path, timestamp = map(str, row)
+
+        # Calcular la profundidad por número de barras invertidas
+        depth = path.count("\\")
+        indent = "  " * depth  # 2 espacios por nivel
+        path_indented = indent + path.replace("\n", " ")
+
+        output.append(f"{path_indented:<{path_w}}│ {key_path:<{key_w}}│ {timestamp:<{time_w}}")
+
+    return "\n".join(output)
 
 
 
@@ -267,6 +364,21 @@ class UserntDataViewer(Renderizable):
             #from forensic_core.artifact_extractor import extraer_artefactos
             #extraer_artefactos(self.db_path, os.path.dirname(self.db_path))
             info = format_userassist_table([", ".join(str(col) for col in row) for row in rows], screen_width=max_x - 4)
+        
+        elif index == 1:
+            max_y, max_x = self.win.getmaxyx()
+            rows = [r for r in rows if all(r)]  # elimina vacíos
+            rows = list(dict.fromkeys(rows))   # elimina duplicados manteniendo orden
+            info = format_recent_docs_table(rows, screen_width=max_x - 4)
+
+        elif index == 3:
+            max_y, max_x = self.win.getmaxyx()
+            rows = list(dict.fromkeys(rows))   # elimina duplicados manteniendo orden
+            info = format_mountpoints2_table(rows, screen_width=max_x - 4)
+        
+        elif index == 6:
+            max_y, max_x = self.win.getmaxyx()
+            info = format_shellbags_table(rows, screen_width=max_x - 4)
         else:
             info = f"{section_titles[index]}\nUsuario: {username}\n\n"
             if not rows:

@@ -10,8 +10,18 @@ KNOWN_GUIDS = {
     "{F38BF404-1D43-42F2-9305-67DE0B28FC23}": "Windows",
     "{A77F5D77-2E2B-44C3-A6A2-ABA601054A51}": "Accesibilidad",
     "{D65231B0-B2F1-4857-A4CE-A8E7C6EA7D27}": "Herramientas del sistema",
-    "{ED228FDF-9EA8-4870-83B1-96B02CFE0D52}": "Menú Inicio\\Programas"
-    # Añade más aquí conforme aparezcan nuevos GUIDs en tus casos
+    "{ED228FDF-9EA8-4870-83B1-96B02CFE0D52}": "Menú Inicio\\Programas",
+    
+    "{c53e7d10-8577-11e3-95e8-806e6f6e6963}": "Unidad optica - LG DVDRAM GSA-4167B (IDE)",
+    "{f10825bd-8cca-11e3-9027-001641e7bb6b}": "USB - Kingston DataTraveler 2.0",
+    "{f10825c7-8cca-11e3-9027-001641e7bb6b}": "Unidad cifrada - TrueCryptVolumeZ",
+
+
+    "{f8b55c0f-85c7-11e3-81d3-001641e7bb6b}": "Disco extraíble Kingston",
+    "{1b767710-5247-4401-a203-e9dcdc672703}": "Disco USB SanDisk",
+    "{be75b00d-0b19-481d-8d0d-52efc6588d22}": "Unidad externa WD"
+    
+    
 }
 
 def traducir_guids(texto):
