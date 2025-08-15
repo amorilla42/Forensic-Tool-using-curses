@@ -186,6 +186,9 @@ def format_mountpoints2_table(rows, screen_width=120):
 def recortar_columna_shellbag_table(texto, ancho):
     return texto if len(texto) <= ancho else texto[:ancho-1] + "…"
 
+
+
+
 def format_shellbags_table(rows, screen_width=120, selected_index=None, show_popup=False, win=None):
     """
     Muestra la tabla de ShellBags con columnas recortadas.
@@ -284,6 +287,125 @@ def format_mru_table(rows, screen_width=120, selected_index=None, show_popup=Fal
 
 
 
+def filetime_to_str(ft_str):
+    """Convierte un FILETIME (en string) a 'YYYY-mm-dd HH:MM:SS' o devuelve el original si no aplica."""
+    from datetime import datetime, timedelta
+    import re
+    # Regex para validar FILETIME: 15-20 dígitos
+    FILETIME_RE = re.compile(r"^\d{15,20}$")
+    try:
+        if ft_str is None:
+            return ""
+        s = str(ft_str).strip()
+        if not FILETIME_RE.match(s):
+            return s
+        ft = int(s)
+        if ft == 0:
+            return ""
+        dt = datetime(1601, 1, 1) + timedelta(microseconds=ft // 10)
+        # sanity check razonable
+        if 1980 <= dt.year <= 2100:
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        return s
+    except Exception:
+        return str(ft_str)
+    
+def resolve_tray_data(data):
+    """
+    Intenta hacer legible el campo 'data':
+    - Si parece FILETIME → fecha
+    - Si contiene GUIDs → los traduce con traducir_guids (mantiene el GUID original si no hay alias)
+    - Si es lista tipo "('guid', 'guid')" → limpia y traduce cada uno
+    - Si no, devuelve tal cual
+    """
+    import re
+
+    if data is None:
+        return ""
+
+    raw = str(data).strip()
+
+    # 1) FILETIME
+    human = filetime_to_str(raw)
+    if human != raw:
+        return human
+
+    # 2) Puede ser una lista/tupla serializada con GUIDs
+    #    Ej: "('{7820...}','{ABCD...}')" o "['{...}', '{...}']"
+    try:
+        # extrae candidatos GUID
+        guids = re.findall(r"\{[0-9A-Fa-f\-]{36}\}", raw)
+        if guids:
+            traducidos = []
+            for g in guids:
+                alias = traducir_guids(g)
+                traducidos.append(f"{alias} ({g})" if alias != g else g)
+            # Si había múltiples, únelos por " | "
+            return " | ".join(traducidos)
+    except Exception:
+        pass
+
+    # 3) Si parece ruta con GUID embebido, intenta traducir
+    try:
+        aliased = traducir_guids(raw)
+        return aliased
+    except Exception:
+        return raw    
+
+def recortar_columna(texto, ancho):
+    s = "" if texto is None else str(texto).replace("\n", " ")
+    return s if len(s) <= ancho else s[:ancho-1] + "…"
+
+def format_traynotify_metadata_table(rows, screen_width=120, selected_index=None, show_popup=False, win=None):
+    """
+    rows: [(user, value_name, data, key_path, timestamp), ...]
+    """
+    name_w = int(screen_width * 0.24)
+    data_w = int(screen_width * 0.36)
+    key_w  = int(screen_width * 0.24)
+    time_w = screen_width - (name_w + data_w + key_w + 6)
+
+    out = []
+    header = f"{'Valor':<{name_w}}│ {'Dato (resuelto)':<{data_w}}│ {'Clave registro':<{key_w}}│ {'Timestamp':<{time_w}}"
+    sep = "─" * len(header)
+    out.append(header)
+    out.append(sep)
+
+    # Render filas
+    for idx, row in enumerate(rows):
+        if len(row) != 5:
+            continue
+        user, value_name, data, key_path, ts = row
+        resolved = resolve_tray_data(data)
+
+        out.append(
+            f"{recortar_columna(value_name, name_w):<{name_w}}│ "
+            f"{recortar_columna(resolved,   data_w):<{data_w}}│ "
+            f"{recortar_columna(key_path,   key_w):<{key_w}}│ "
+            f"{recortar_columna(ts,         time_w):<{time_w}}"
+        )
+
+    # Popup
+    if show_popup and win is not None and selected_index is not None and 0 <= selected_index < len(rows):
+        user, value_name, data, key_path, ts = rows[selected_index]
+        resolved = resolve_tray_data(data)
+
+        max_y, max_x = win.getmaxyx()
+        w = max_x - 4
+        wrap = lambda t: textwrap.fill("" if t is None else str(t), width=w)
+
+        contenido = (
+            f"Usuario:\n{user}\n\n"
+            f"Valor (value_name):\n{wrap(value_name)}\n\n"
+            f"Dato (raw):\n{wrap(data)}\n\n"
+            f"Dato (resuelto):\n{wrap(resolved)}\n\n"
+            f"Clave de registro:\n{wrap(key_path)}\n\n"
+            f"Timestamp:\n{wrap(ts)}"
+        )
+        show_scrollable_popup(win, contenido, "Detalle TrayNotify Metadata")
+
+    return "\n".join(out)
+
 
 
 class UserntDataViewer(Renderizable):
@@ -297,6 +419,7 @@ class UserntDataViewer(Renderizable):
         self.export_path = export_path
         self.layout = layout
         self._load_users()
+        self.shellbags_scope = "user" # "user" | "system" | "all"
 
     def _load_users(self):
         conn = sqlite3.connect(self.db_path)
@@ -341,6 +464,16 @@ class UserntDataViewer(Renderizable):
         elif key in [10, 13]:  # ENTER
             self._show_user_menu(self.users[self.selected_index])
 
+    def _get_shellbags_rows(self, cursor, username, scope):
+        if scope == "user":
+            cursor.execute("SELECT user, path, key_path, timestamp FROM shellbags WHERE user=? AND (path NOT LIKE '%.dll%' AND path NOT LIKE '%System32%' AND path NOT LIKE '%Windows%')", (username,))
+        elif scope == "system":
+            cursor.execute("SELECT user, path, key_path, timestamp FROM shellbags WHERE user= ? AND (path LIKE '%.dll%' OR path LIKE '%System32%' OR path LIKE '%Windows%')", (username,))
+        else:  # "all"
+            cursor.execute("SELECT user, path, key_path, timestamp FROM shellbags")
+        return cursor.fetchall()
+
+
     def _show_user_menu(self, username):
         options = [
             "Programas ejecutados (Menú Inicio)",
@@ -354,7 +487,7 @@ class UserntDataViewer(Renderizable):
             "TrayNotify: ejecutables e información del systray",
             "TrayNotify: metadatos de entradas del systray"
         ]
-        self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion, s: Activar/Desactivar entradas del sistema en MuiCache")
+        self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
 
         selected = 0
         while True:
@@ -437,17 +570,17 @@ class UserntDataViewer(Renderizable):
         if index == 0:
             max_y, max_x = self.win.getmaxyx()
             #TODO: BORRAR DESPUES
-            from forensic_core.artifact_extractor import extraer_artefactos
-            extraer_artefactos(self.db_path, os.path.dirname(self.db_path))
+            #from forensic_core.artifact_extractor import extraer_artefactos
+            #extraer_artefactos(self.db_path, os.path.dirname(self.db_path))
             info = format_userassist_table([", ".join(str(col) for col in row) for row in rows], screen_width=max_x - 4)
         
-        elif index == 1:
+        elif index == 1: # Documentos recientes
             max_y, max_x = self.win.getmaxyx()
             rows = [r for r in rows if all(r)]  # elimina vacíos
             rows = list(dict.fromkeys(rows))   # elimina duplicados manteniendo orden
             info = format_recent_docs_table(rows, screen_width=max_x - 4)
 
-        elif index == 3:
+        elif index == 3: # Dispositivos conectados
             max_y, max_x = self.win.getmaxyx()
             rows = list(dict.fromkeys(rows))   # elimina duplicados manteniendo orden
             info = format_mountpoints2_table(rows, screen_width=max_x - 4)
@@ -455,47 +588,105 @@ class UserntDataViewer(Renderizable):
         elif index == 6:  # ShellBags
             selected = 0
             scroll_offset = 0
+
+            self.layout.change_footer("")
+
+            # conexión reutilizable dentro del bucle
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
             while True:
+                # Carga según alcance actual
+                rows = self._get_shellbags_rows(cursor, username, self.shellbags_scope)
+
                 self.win.clear()
                 max_y, max_x = self.win.getmaxyx()
                 self.win.box()
-                
-                header_text = " ShellBags "
-                self.win.addstr(0, (max_x - len(header_text)) // 2, header_text, curses.A_BOLD)
 
-                footer_text = " ↑/↓: Navegar  ENTER: Detalle  ESC: Salir "
-                self.win.addstr(max_y - 1, (max_x - len(footer_text)) // 2, footer_text, curses.A_BOLD)
+                # Header con insignia de alcance
+                scope_badge = {
+                    "user": f"Usuario: {username}",
+                    "system": "Sistema",
+                    "all": "Todos"
+                }[self.shellbags_scope]
+                header_text = f" ShellBags [{scope_badge}] "
+                self.win.addstr(0, max(2, (max_x - len(header_text)) // 2), header_text, curses.A_BOLD)
 
+                # Footer con ayuda de teclas
+                footer_text = " ↑/↓: Navegar  ENTER: Detalle  u: Usuario  s: Sistema  a: Todos  ESC/q: Salir "
+                self.win.addstr(max_y - 1, max(2, (max_x - len(footer_text)) // 2), footer_text, curses.A_BOLD)
+
+                # Render tabla (texto) y gestionar scroll/selección a nivel de filas (no líneas)
                 tabla = format_shellbags_table(rows, screen_width=max_x - 4)
                 lineas = tabla.split("\n")
 
-                visible_height = max_y - 2  # sin header/footer
+                # Las 2 primeras líneas son header y separador
+                header_lines = 2
+                data_lines_total = max(0, len(lineas) - header_lines)
 
-                if selected < scroll_offset:
-                    scroll_offset = selected
-                elif selected >= scroll_offset + visible_height:
-                    scroll_offset = selected - visible_height + 1
+                # Asegura selected dentro de rango
+                if rows:
+                    selected = max(0, min(selected, len(rows) - 1))
+                else:
+                    selected = 0
 
+                # Ajuste de scroll: contamos líneas totales visibles (incluye header/separador)
+                visible_height = max_y - 2  # sin bordes de caja
+                # Para que la fila seleccionada (data_idx) sea visible, calculamos su posición en "lineas"
+                selected_line = selected + header_lines  # línea absoluta en 'lineas'
+
+                if selected_line < scroll_offset + header_lines:
+                    scroll_offset = selected_line - header_lines
+                elif selected_line >= scroll_offset + visible_height:
+                    scroll_offset = selected_line - visible_height + 1
+
+                # Clamp scroll
+                max_scroll = max(0, len(lineas) - visible_height)
+                scroll_offset = max(0, min(scroll_offset, max_scroll))
+
+                # Pintar líneas visibles
                 visibles = lineas[scroll_offset:scroll_offset + visible_height]
-
                 for idx, line in enumerate(visibles):
                     y = idx + 1
-                    if scroll_offset + idx == selected:
-                        self.win.addstr(y, 2, line[:max_x - 4], curses.A_REVERSE)
+                    absolute_line = scroll_offset + idx
+                    # Marcar solo las filas de datos (a partir de header_lines)
+                    if absolute_line >= header_lines:
+                        data_idx = absolute_line - header_lines
+                        attr = curses.A_REVERSE if data_idx == selected else curses.A_NORMAL
                     else:
-                        self.win.addstr(y, 2, line[:max_x - 4])
+                        attr = curses.A_BOLD if absolute_line == 0 else curses.A_NORMAL
+                    self.win.addstr(y, 2, line[:max_x - 4], attr)
 
                 self.win.refresh()
                 key = self.win.getch()
 
                 if key == curses.KEY_UP:
-                    selected = (selected - 1) % len(rows)
+                    if rows:
+                        selected = (selected - 1) % len(rows)
                 elif key == curses.KEY_DOWN:
-                    selected = (selected + 1) % len(rows)
+                    if rows:
+                        selected = (selected + 1) % len(rows)
                 elif key in (10, 13):  # ENTER
-                    format_shellbags_table(rows, screen_width=max_x - 4, selected_index=selected -2, show_popup=True, win=self.win)
+                    if rows:
+                        # Pasa el índice de fila directamente (ya no restamos 2)
+                        format_shellbags_table(rows, screen_width=max_x - 4,
+                                            selected_index=selected, show_popup=True, win=self.win)
                 elif key in (27, ord("q")):
+                    conn.close()
+                    self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
                     return
+                elif key == ord("u"):
+                    self.shellbags_scope = "user"
+                    selected = 0
+                    scroll_offset = 0
+                elif key == ord("s"):
+                    self.shellbags_scope = "system"
+                    selected = 0
+                    scroll_offset = 0
+                elif key == ord("a"):
+                    self.shellbags_scope = "all"
+                    selected = 0
+                    scroll_offset = 0
 
         elif index == 7:  # MRU entries
             selected = 0
@@ -503,8 +694,9 @@ class UserntDataViewer(Renderizable):
                 self.win.clear()
                 max_y, max_x = self.win.getmaxyx()
                 self.win.box()
+                self.layout.change_footer("")
 
-                self.win.addstr(0, (max_x - len(" MRU ")) // 2, " MRU ", curses.A_BOLD)
+                self.win.addstr(0, (max_x - len(" MRU (archivos usados recientemente) ")) // 2, " MRU (archivos usados recientemente) ", curses.A_BOLD)
                 self.win.addstr(max_y - 1, (max_x - len(" ↑/↓: Navegar  ENTER: Detalle  ESC: Salir ")) // 2,
                                 " ↑/↓: Navegar  ENTER: Detalle  ESC: Salir ", curses.A_BOLD)
 
@@ -527,8 +719,85 @@ class UserntDataViewer(Renderizable):
                 elif key in (10, 13):
                     format_mru_table(rows, screen_width=max_x - 4, selected_index=selected, show_popup=True, win=self.win)
                 elif key in (27, ord("q")):
+                    self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
                     return
+        elif index == 9:  # TrayNotify metadata
+            selected = 0
+            scroll_offset = 0
+            self.layout.change_footer("")
 
+            # Cargamos de nuevo las filas para este usuario
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT user, value_name, data, key_path, timestamp FROM traynotify_metadata WHERE user=? ORDER BY timestamp",
+                (username,)
+            )
+            rows = cursor.fetchall()
+
+            while True:
+                self.win.clear()
+                max_y, max_x = self.win.getmaxyx()
+                self.win.box()
+
+                title = " TrayNotify: metadatos de entradas del systray "
+                self.win.addstr(0, max(2, (max_x - len(title)) // 2), title, curses.A_BOLD)
+
+                footer = " ↑/↓: Navegar  ENTER: Detalle  ESC/q: Salir "
+                self.win.addstr(max_y - 1, max(2, (max_x - len(footer)) // 2), footer, curses.A_BOLD)
+
+                tabla = format_traynotify_metadata_table(rows, screen_width=max_x - 4)
+                lineas = tabla.split("\n")
+
+                header_lines = 2
+                visible_height = max_y - 2  # sin bordes
+                total_lines = len(lineas)
+
+                # Asegura selected dentro de rango
+                if rows:
+                    selected = max(0, min(selected, len(rows) - 1))
+                else:
+                    selected = 0
+
+                selected_line = selected + header_lines
+
+                if selected_line < scroll_offset + header_lines:
+                    scroll_offset = selected_line - header_lines
+                elif selected_line >= scroll_offset + visible_height:
+                    scroll_offset = selected_line - visible_height + 1
+
+                max_scroll = max(0, total_lines - visible_height)
+                scroll_offset = max(0, min(scroll_offset, max_scroll))
+
+                visibles = lineas[scroll_offset:scroll_offset + visible_height]
+                for i, line in enumerate(visibles):
+                    y = i + 1
+                    abs_line = scroll_offset + i
+                    if abs_line >= header_lines:
+                        data_idx = abs_line - header_lines
+                        attr = curses.A_REVERSE if data_idx == selected else curses.A_NORMAL
+                    else:
+                        attr = curses.A_BOLD if abs_line == 0 else curses.A_NORMAL
+                    self.win.addstr(y, 2, line[:max_x - 4], attr)
+
+                self.win.refresh()
+                key = self.win.getch()
+
+                if key == curses.KEY_UP:
+                    if rows:
+                        selected = (selected - 1) % len(rows)
+                elif key == curses.KEY_DOWN:
+                    if rows:
+                        selected = (selected + 1) % len(rows)
+                elif key in (10, 13):  # ENTER
+                    if rows:
+                        format_traynotify_metadata_table(rows, screen_width=max_x - 4,
+                                                        selected_index=selected, show_popup=True, win=self.win)
+                elif key in (27, ord("q")):
+                    conn.close()
+                    self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
+                    return
+ 
         else:
             info = f" {section_titles[index]} \nUsuario: {username}\n\n"
             if not rows:
@@ -542,7 +811,7 @@ class UserntDataViewer(Renderizable):
 
         show_scrollable_popup(self.win, info, section_titles[index])
         self.layout.change_header("Informacion general de los usuarios disponibles")
-        self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion, s: Activar/Desactivar entradas del sistema en MuiCache")
+        self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
 
 
     def _export_user_data(self, username):
