@@ -309,14 +309,78 @@ def filetime_to_str(ft_str):
         return s
     except Exception:
         return str(ft_str)
-    
-def resolve_tray_data(data):
+
+def resolver_traynotify_guids(db_path, guid_string):
     """
-    Intenta hacer legible el campo 'data':
-    - Si parece FILETIME → fecha
-    - Si contiene GUIDs → los traduce con traducir_guids (mantiene el GUID original si no hay alias)
-    - Si es lista tipo "('guid', 'guid')" → limpia y traduce cada uno
-    - Si no, devuelve tal cual
+    Dada la cadena 'data' con varios GUIDs (separados por comas), intenta
+    resolverlos contra tus tablas: installed_components, muicache, app_paths,
+    filesystem_entry. Devuelve lista de strings legibles.
+    """
+    import re
+    # Extrae GUIDs entre llaves {....}
+    guids = re.findall(r"\{[0-9A-Za-z\-]{36}\}", str(guid_string))
+    if not guids:
+        return []
+
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    resueltos = []
+
+    for g in guids:
+        descr = None
+
+        # 1) installed_components (CLSID/AppID conocidos)
+        cur.execute("""
+            SELECT component_name, stub_path FROM installed_components WHERE component_id=?
+        """, (g,))
+        row = cur.fetchone()
+        if row:
+            name, stub = row
+            if name:
+                descr = f"{name} [{g}]"
+            elif stub:
+                descr = f"{stub} [{g}]"
+
+        # 2) muicache (a veces contiene rutas/entradas con GUID)
+        if not descr:
+            cur.execute("""
+                SELECT description FROM muicache WHERE entry_name LIKE ?
+            """, (f"%{g}%",))
+            row = cur.fetchone()
+            if row and row[0]:
+                descr = f"{row[0]} [{g}]"
+
+        # 3) app_paths (por si el GUID aparece embebido en alguna ruta)
+        if not descr:
+            cur.execute("""
+                SELECT executable, path FROM app_paths WHERE path LIKE ?
+            """, (f"%{g}%",))
+            row = cur.fetchone()
+            if row:
+                exe, path = row
+                descr = f"{exe} ({path}) [{g}]"
+
+        # 4) filesystem_entry (GUID en rutas del FS)
+        if not descr:
+            cur.execute("""
+                SELECT full_path FROM filesystem_entry WHERE full_path LIKE ?
+            """, (f"%{g}%",))
+            row = cur.fetchone()
+            if row and row[0]:
+                descr = f"{row[0]} [{g}]"
+
+        resueltos.append(descr or g)
+
+    conn.close()
+    return resueltos
+
+
+
+def resolve_tray_data(data, db_path=None):
+    """
+    - Si es FILETIME → fecha legible
+    - Si contiene varios GUID → intenta resolverlos con la DB (si se pasa db_path)
+    - Si contiene GUID/rutas → usa traducir_guids como fallback
     """
     import re
 
@@ -330,20 +394,18 @@ def resolve_tray_data(data):
     if human != raw:
         return human
 
-    # 2) Puede ser una lista/tupla serializada con GUIDs
-    #    Ej: "('{7820...}','{ABCD...}')" o "['{...}', '{...}']"
-    try:
-        # extrae candidatos GUID
-        guids = re.findall(r"\{[0-9A-Fa-f\-]{36}\}", raw)
-        if guids:
-            traducidos = []
-            for g in guids:
-                alias = traducir_guids(g)
-                traducidos.append(f"{alias} ({g})" if alias != g else g)
-            # Si había múltiples, únelos por " | "
-            return " | ".join(traducidos)
-    except Exception:
-        pass
+    # 2) Lista de GUIDs separada por comas
+    guids = re.findall(r"\{[0-9A-Za-z\-]{36}\}", raw)
+    if guids:
+        if db_path:
+            resolved = resolver_traynotify_guids(db_path, raw)
+            return " | ".join(resolved)
+        # sin DB, al menos traduce (si tienes alias)
+        try:
+            from utils.guid_aliases import traducir_guids
+            return " | ".join([traducir_guids(g) for g in guids])
+        except Exception:
+            return " | ".join(guids)
 
     # 3) Si parece ruta con GUID embebido, intenta traducir
     try:
@@ -356,10 +418,8 @@ def recortar_columna(texto, ancho):
     s = "" if texto is None else str(texto).replace("\n", " ")
     return s if len(s) <= ancho else s[:ancho-1] + "…"
 
-def format_traynotify_metadata_table(rows, screen_width=120, selected_index=None, show_popup=False, win=None):
-    """
-    rows: [(user, value_name, data, key_path, timestamp), ...]
-    """
+def format_traynotify_metadata_table(rows, screen_width=120, selected_index=None, show_popup=False, win=None, db_path=None):
+    import textwrap
     name_w = int(screen_width * 0.24)
     data_w = int(screen_width * 0.36)
     key_w  = int(screen_width * 0.24)
@@ -371,12 +431,11 @@ def format_traynotify_metadata_table(rows, screen_width=120, selected_index=None
     out.append(header)
     out.append(sep)
 
-    # Render filas
     for idx, row in enumerate(rows):
         if len(row) != 5:
             continue
         user, value_name, data, key_path, ts = row
-        resolved = resolve_tray_data(data)
+        resolved = resolve_tray_data(data, db_path=db_path)
 
         out.append(
             f"{recortar_columna(value_name, name_w):<{name_w}}│ "
@@ -385,10 +444,9 @@ def format_traynotify_metadata_table(rows, screen_width=120, selected_index=None
             f"{recortar_columna(ts,         time_w):<{time_w}}"
         )
 
-    # Popup
     if show_popup and win is not None and selected_index is not None and 0 <= selected_index < len(rows):
         user, value_name, data, key_path, ts = rows[selected_index]
-        resolved = resolve_tray_data(data)
+        resolved = resolve_tray_data(data, db_path=db_path)
 
         max_y, max_x = win.getmaxyx()
         w = max_x - 4
@@ -405,6 +463,7 @@ def format_traynotify_metadata_table(rows, screen_width=120, selected_index=None
         show_scrollable_popup(win, contenido, "Detalle TrayNotify Metadata")
 
     return "\n".join(out)
+
 
 
 
@@ -746,7 +805,7 @@ class UserntDataViewer(Renderizable):
                 footer = " ↑/↓: Navegar  ENTER: Detalle  ESC/q: Salir "
                 self.win.addstr(max_y - 1, max(2, (max_x - len(footer)) // 2), footer, curses.A_BOLD)
 
-                tabla = format_traynotify_metadata_table(rows, screen_width=max_x - 4)
+                tabla = format_traynotify_metadata_table(rows, screen_width=max_x - 4, db_path=self.db_path)
                 lineas = tabla.split("\n")
 
                 header_lines = 2
@@ -792,7 +851,7 @@ class UserntDataViewer(Renderizable):
                 elif key in (10, 13):  # ENTER
                     if rows:
                         format_traynotify_metadata_table(rows, screen_width=max_x - 4,
-                                                        selected_index=selected, show_popup=True, win=self.win)
+                                                        selected_index=selected, show_popup=True, win=self.win, db_path=self.db_path)
                 elif key in (27, ord("q")):
                     conn.close()
                     self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
