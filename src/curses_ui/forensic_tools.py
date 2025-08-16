@@ -9,6 +9,7 @@ from curses_ui.awesome_input import AwesomeInput
 from curses_ui.awesome_layout import AwesomeLayout
 from curses_ui.awesome_loader import CircleLoader
 
+
 from curses_ui.ui_handler import UIHandler
 from forensic_core.artifacts.registry.registry_analyzer import registry_analyzer
 from forensic_core.artifacts.registry.sam_hive import visualizar_usuarios
@@ -28,20 +29,48 @@ class ForensicTools:
         self.e01_path = None
 
     def new_case(self):
+        from curses_ui.new_case_filesystem_browser import file_browser
+
         layout = AwesomeLayout()
         layout.render()
         layout.change_header("Introduce el nombre del caso")
         layout.change_footer("Presiona ESC para salir")
 
         
-        self.nombre_caso = AwesomeInput(layout.body_win).render()
+        #self.nombre_caso = AwesomeInput(layout.body_win).render()
 
-        layout.change_header("Introduce la ruta al archivo .E01")
-        layout.change_footer("Presiona ESC para salir")
+        nombre = AwesomeInput(layout.body_win, prompt=" Nombre del caso ", default_text="").render()
+        
+        if nombre is None:
+            # Cancelado con ESC
+            import sys
+            sys.exit(0)
+        
+        self.nombre_caso = nombre
 
-        self.e01_path = AwesomeInput(layout.body_win).render()
-        self.e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/portatil.E01"
         self.caso_dir = crear_directorio_caso(self.nombre_caso)
+
+        layout.change_header("Navega y selecciona el archivo .E01")
+        layout.change_footer("↑/↓ mover  ENTER abrir/seleccionar   ESC cancelar")
+
+        selected = file_browser(layout.body_win, start_path=self.caso_dir, wanted_ext=".E01")
+        #self.e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/portatil.E01"
+        
+        if not selected:
+            # Cancelado
+            layout.change_header("Operación cancelada")
+            layout.change_footer("Pulsa cualquier tecla para volver")
+            layout.body_win.getch()
+            try:
+                os.rmdir(self.caso_dir)
+            except OSError:
+                pass
+            finally:
+                import sys
+                sys.exit(0)  # Exit the program if no file was selected
+            
+
+        self.e01_path = selected
 
         self.db_path = os.path.join(self.caso_dir, f"{self.nombre_caso}.db")
         crear_base_de_datos(self.db_path)

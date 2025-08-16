@@ -467,6 +467,70 @@ def format_traynotify_metadata_table(rows, screen_width=120, selected_index=None
 
 
 
+def moz_prtime_to_str(value):
+    from datetime import datetime
+    """Firefox PRTime → 'YYYY-mm-dd HH:MM:SS' (UTC). PRTime = microsegundos desde Unix epoch."""
+    try:
+        if value is None:
+            return ""
+        v = int(value)
+        if v <= 0:
+            return ""
+        return datetime.utcfromtimestamp(v / 1_000_000).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return str(value) if value is not None else ""
+
+def recortar_columna_url(texto, ancho):
+    s = "" if texto is None else str(texto).replace("\n", " ")
+    return s if len(s) <= ancho else s[:ancho-1] + "…"
+
+def format_firefox_history_table(rows, screen_width=120, selected_index=None, show_popup=False, win=None):
+    """
+    Tabla: URL | Título | Visitas | Última visita.
+    rows: [(url, title, visit_count, last_visit_date), ...]
+    """
+    url_w   = int(screen_width * 0.42)
+    title_w = int(screen_width * 0.35)
+    count_w = 8
+    time_w  = screen_width - (url_w + title_w + count_w + 7)
+
+    out = []
+    header = f"{'URL':<{url_w}}│ {'Título':<{title_w}}│ {'Visitas':^{count_w}} │ {'Última visita (UTC)':<{time_w}}"
+    sep = "─" * len(header)
+    out.append(header)
+    out.append(sep)
+
+    for idx, row in enumerate(rows):
+        if len(row) != 4:
+            continue
+        url, title, visit_count, last_visit_date = row
+        out.append(
+            f"{recortar_columna_url(url,   url_w):<{url_w}}│ "
+            f"{recortar_columna_url(title, title_w):<{title_w}}│ "
+            f"{str(visit_count or 0):^{count_w}} │ "
+            f"{recortar_columna_url(moz_prtime_to_str(last_visit_date), time_w):<{time_w}}"
+        )
+
+    if show_popup and win is not None and selected_index is not None and 0 <= selected_index < len(rows):
+        import textwrap
+        url, title, visit_count, last_visit_date = rows[selected_index]
+        max_y, max_x = win.getmaxyx()
+        w = max_x - 4
+        contenido = (
+            f"URL:\n{textwrap.fill(str(url or ''), width=w)}\n\n"
+            f"Título:\n{textwrap.fill(str(title or ''), width=w)}\n\n"
+            f"Visitas: {visit_count or 0}\n\n"
+            f"Última visita (UTC): {moz_prtime_to_str(last_visit_date)}"
+        )
+        show_scrollable_popup(win, contenido, "Detalle historial Firefox")
+
+    return "\n".join(out)
+
+
+
+
+
+
 class UserntDataViewer(Renderizable):
     def __init__(self, win, db_path, export_path, layout):
         self.win = win
@@ -544,7 +608,8 @@ class UserntDataViewer(Renderizable):
             "ShellBags",
             "MRU (archivos usados recientemente)",
             "TrayNotify: ejecutables e información del systray",
-            "TrayNotify: metadatos de entradas del systray"
+            "TrayNotify: metadatos de entradas del systray",
+            "Historial de navegador (Firefox)" 
         ]
         self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
 
@@ -588,7 +653,8 @@ class UserntDataViewer(Renderizable):
             ("shellbags", "user, path, key_path, timestamp"),
             ("mru_entries", "user, mru_type, extension, file_name, key_path, timestamp"),
             ("traynotify_executables", "user, source, exe_name, extension_type, suspicious, key_path, timestamp"),
-            ("traynotify_metadata", "user, value_name, data, key_path, timestamp")
+            ("traynotify_metadata", "user, value_name, data, key_path, timestamp"),
+            ("firefox_history", "url, title, visit_count, last_visit_date")
         ]
 
         table, fields = mapping[index]
@@ -604,7 +670,8 @@ class UserntDataViewer(Renderizable):
             "shellbags": "user",
             "mru_entries": "user",
             "traynotify_executables": "user",
-            "traynotify_metadata": "user"
+            "traynotify_metadata": "user",
+            "firefox_history": "username" 
         }
 
         campo_usuario = user_field_per_table.get(table, "username")
@@ -623,7 +690,8 @@ class UserntDataViewer(Renderizable):
             "ShellBags",
             "MRU (archivos usados recientemente)",
             "TrayNotify: ejecutables e información del systray",
-            "TrayNotify: metadatos de entradas del systray"
+            "TrayNotify: metadatos de entradas del systray",
+            "Historial de navegador (Firefox)"
         ]
 
         if index == 0:
@@ -727,7 +795,6 @@ class UserntDataViewer(Renderizable):
                         selected = (selected + 1) % len(rows)
                 elif key in (10, 13):  # ENTER
                     if rows:
-                        # Pasa el índice de fila directamente (ya no restamos 2)
                         format_shellbags_table(rows, screen_width=max_x - 4,
                                             selected_index=selected, show_popup=True, win=self.win)
                 elif key in (27, ord("q")):
@@ -856,7 +923,84 @@ class UserntDataViewer(Renderizable):
                     conn.close()
                     self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
                     return
- 
+        elif index == 10:  # Historial de navegador (Firefox)
+            selected = 0
+            scroll_offset = 0
+            self.layout.change_footer("")
+
+            # Cargamos de nuevo las filas para este usuario, ordenadas por última visita desc
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT url, title, visit_count, last_visit_date "
+                "FROM firefox_history WHERE username=? AND COALESCE(visit_count,0) > 0 "
+                "ORDER BY last_visit_date DESC NULLS LAST", (username,)
+            )
+            rows = cursor.fetchall()
+
+            while True:
+                self.win.clear()
+                max_y, max_x = self.win.getmaxyx()
+                self.win.box()
+
+                title = " Historial de navegador (Firefox) "
+                self.win.addstr(0, max(2, (max_x - len(title)) // 2), title, curses.A_BOLD)
+
+                footer = " ↑/↓: Navegar  ENTER: Detalle  ESC/q: Salir "
+                self.win.addstr(max_y - 1, max(2, (max_x - len(footer)) // 2), footer, curses.A_BOLD)
+
+                tabla = format_firefox_history_table(rows, screen_width=max_x - 4)
+                lineas = tabla.split("\n")
+
+                header_lines = 2
+                visible_height = max_y - 2
+                total_lines = len(lineas)
+
+                # Asegura selected dentro del rango de filas
+                if rows:
+                    selected = max(0, min(selected, len(rows) - 1))
+                else:
+                    selected = 0
+
+                selected_line = selected + header_lines
+
+                if selected_line < scroll_offset + header_lines:
+                    scroll_offset = selected_line - header_lines
+                elif selected_line >= scroll_offset + visible_height:
+                    scroll_offset = selected_line - visible_height + 1
+
+                max_scroll = max(0, total_lines - visible_height)
+                scroll_offset = max(0, min(scroll_offset, max_scroll))
+
+                visibles = lineas[scroll_offset:scroll_offset + visible_height]
+                for i, line in enumerate(visibles):
+                    y = i + 1
+                    abs_line = scroll_offset + i
+                    if abs_line >= header_lines:
+                        data_idx = abs_line - header_lines
+                        attr = curses.A_REVERSE if data_idx == selected else curses.A_NORMAL
+                    else:
+                        attr = curses.A_BOLD if abs_line == 0 else curses.A_NORMAL
+                    self.win.addstr(y, 2, line[:max_x - 4], attr)
+
+                self.win.refresh()
+                key = self.win.getch()
+
+                if key == curses.KEY_UP:
+                    if rows:
+                        selected = (selected - 1) % len(rows)
+                elif key == curses.KEY_DOWN:
+                    if rows:
+                        selected = (selected + 1) % len(rows)
+                elif key in (10, 13):  # ENTER
+                    if rows:
+                        format_firefox_history_table(rows, screen_width=max_x - 4,
+                                                    selected_index=selected, show_popup=True, win=self.win)
+                elif key in (27, ord("q")):
+                    conn.close()
+                    self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
+                    return
+
         else:
             info = f" {section_titles[index]} \nUsuario: {username}\n\n"
             if not rows:
@@ -887,7 +1031,8 @@ class UserntDataViewer(Renderizable):
             ("shellbags", "ShellBags", "user, path, key_path, timestamp"),
             ("mru_entries", "MRU (archivos usados recientemente)", "user, mru_type, extension, file_name, key_path, timestamp"),
             ("traynotify_executables", "TrayNotify: ejecutables e información del systray", "user, source, exe_name, extension_type, suspicious, key_path, timestamp"),
-            ("traynotify_metadata", "TrayNotify: metadatos de entradas del systray", "user, value_name, data, key_path, timestamp")
+            ("traynotify_metadata", "TrayNotify: metadatos de entradas del systray", "user, value_name, data, key_path, timestamp"),
+            ("firefox_history", "Historial de navegador (Firefox)", "url, title, visit_count, last_visit_date")
         ]
 
         user_field_per_table = {
@@ -900,7 +1045,8 @@ class UserntDataViewer(Renderizable):
             "shellbags": "user",
             "mru_entries": "user",
             "traynotify_executables": "user",
-            "traynotify_metadata": "user"
+            "traynotify_metadata": "user",
+            "firefox_history": "username"
         }
 
         output = f"Resumen forense de usuario: {username}\n\n"
@@ -916,7 +1062,14 @@ class UserntDataViewer(Renderizable):
                     if table == "muicache" and not self.show_system_entries:
                         if str(row[0]).lower().startswith("@shell32.dll") or str(row[0]).lower().startswith("@c:\\windows"):
                             continue
-                    output += ", ".join(str(col) for col in row) + "\n"
+
+                    if table == "firefox_history":
+                        # Orden según mapping: url, title, visit_count, last_visit_date
+                        url, title, visit_count, last_visit_date = row
+                        output += f"{url}, {title}, {visit_count}, {moz_prtime_to_str(last_visit_date)}\n"
+                    else:
+                        output += ", ".join(str(col) for col in row) + "\n"
+
             output += "\n"
 
         conn.close()

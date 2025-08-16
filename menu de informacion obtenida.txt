@@ -40,7 +40,17 @@ Informacion de usuarios locales del sistema
             ShellBags
             MRU (archivos usados recientemente)
             TrayNotify: ejecutables e información del systray
+            HISTORIAL DE BUSQUEDAS DE INTERNET
     Extracción y Cracking de Credenciales de Usuario usando hashcat y el diccionario rockyou.txt
 
+
+
+
+
+-------------------------------------POR HACER------------------------------------
+
+INTEGRACION DE VIRUSTOTAL
+
+ARCHIVOS INTERESANTES: EMAILS
 
 
