@@ -16,6 +16,8 @@ import shutil
 
 
 
+
+
 BASE_DIR_EXPORT_TEMP = "temp"
 BASE_DIR_EXPORT = "exported_files"
 
@@ -58,58 +60,99 @@ def extraer_artefactos(db_path, caso_dir):
 
 def exportar_file(ewf_path, partition_offset, path, dir_interesantes):
     from forensic_core.e01_reader import open_e01_image
+    from forensic_core.export_eml import export_eml
+
     img = open_e01_image(ewf_path)
     fs = pytsk3.FS_Info(img, offset=partition_offset)
     file_entry = fs.open(path)
 
+    nombre = file_entry.info.name.name.decode("utf-8", errors="ignore")
+    nombre_lc = nombre.lower()
+
     size = file_entry.info.meta.size
     offset = 0
-    chunk_size = 1024 * 1024  # 1 MB
+    chunk_size = 1024 * 1024
 
-    output_path = os.path.join(
-        dir_interesantes,
-        file_entry.info.name.name.decode("utf-8", errors="ignore")
-    )
+    # Si es .eml: idempotencia por carpeta <dir_interesantes>/<nombre.eml>/
+    if nombre_lc.endswith(".eml"):
+        carpeta_destino = os.path.join(dir_interesantes, nombre)
+        if os.path.exists(carpeta_destino):
+            return
+        export_eml(case_dir=dir_interesantes,
+                   file_entry=file_entry,
+                   size=size,
+                   offset=offset,
+                   chunk_size=chunk_size)
+        return
 
+    # Resto: idempotencia por fichero plano
+    output_path = os.path.join(dir_interesantes, nombre)
     if os.path.exists(output_path):
         return
+
     with open(output_path, "wb") as f:
-        while offset < size:
-            data = file_entry.read_random(offset, min(chunk_size, size - offset))
+        cur = offset
+        while cur < size:
+            data = file_entry.read_random(cur, min(chunk_size, size - cur))
             if not data:
                 break
             f.write(data)
-            offset += len(data)
+            cur += len(data)
 
 
 
 def exportar_archivos_interesantes(db_path, caso_dir):
     dir_interesantes = os.path.join(caso_dir, "archivos_interesantes")
     os.makedirs(dir_interesantes, exist_ok=True)
-    
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM filesystem_entry WHERE extension IN ('.pdf', '.doc', '.txt', '.snt', '.pst', '.ost', '.zip', '.rar', '.7z')")
-    results = cursor.fetchall()
-    #TODO: LA BASE DE DATOS LAS PARTICIONES ESTAN CON ID 1 MENOS DE LO QUE DEBERIA
-    partition_offset_sectors = cursor.execute(
-        "SELECT partition_offset from partition_info WHERE partition_id = ?", (results[0][1]+1,)
-    ).fetchone()[0]
-    path = cursor.execute("SELECT e01_path FROM case_info").fetchall()
 
-    for result in results:
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT entry_id, partition_id, full_path, LOWER(extension) AS ext
+        FROM filesystem_entry
+        WHERE ext IN ('.pdf', '.doc', '.txt', '.snt', '.pst', '.ost', '.zip', '.rar', '.7z', '.eml')
+        ORDER BY entry_id
+    """)
+    results = cur.fetchall()
+    if not results:
+        conn.close()
+        return
+
+    row_e01 = cur.execute("SELECT e01_path FROM case_info LIMIT 1").fetchone()
+    if not row_e01:
+        conn.close()
+        raise RuntimeError("No se encontró e01_path en case_info.")
+    e01_path = row_e01[0]
+
+    # Cache de offsets por partition_id
+    offsets = {}
+
+    for _entry_id, partition_id, tsk_path, _ext in results:
+        if partition_id not in offsets:
+            row_off = cur.execute(
+                "SELECT partition_offset FROM partition_info WHERE partition_id = ?",
+                (partition_id + 1,)
+            ).fetchone()
+            if not row_off:
+                # Si no hay offset, continuar con el siguiente
+                continue
+            offsets[partition_id] = row_off[0]
+
+        partition_offset_sectors = offsets[partition_id]
+
         exportar_file(
-                ewf_path=path[0][0],
-                partition_offset=partition_offset_sectors,
-                path=result[2],
-                dir_interesantes = dir_interesantes
-            )
+            ewf_path=e01_path,
+            partition_offset=partition_offset_sectors,
+            path=tsk_path,
+            dir_interesantes=dir_interesantes
+        )
+
     conn.close()
 
     escanear_y_procesar_archivos_borrados(dir_interesantes, dir_interesantes)
 
 
-    
 
 def exportar_historial_firefox(db_path, caso_dir):
     from forensic_core.export_file import exportar_archivo

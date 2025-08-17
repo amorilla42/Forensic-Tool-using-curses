@@ -42,7 +42,7 @@ Informacion de usuarios locales del sistema
             TrayNotify: ejecutables e información del systray
             HISTORIAL DE BUSQUEDAS DE INTERNET
     Extracción y Cracking de Credenciales de Usuario usando hashcat y el diccionario rockyou.txt
-
+    EXTRACCION DE ARCHIVOS INTERESANTES DE TODO EL SISTEMA: pdfs, fotos, emails, archivos borrados, .doc, .txt, archivos comprimidos, etc.
 
 
 
@@ -51,6 +51,11 @@ Informacion de usuarios locales del sistema
 
 INTEGRACION DE VIRUSTOTAL
 
-ARCHIVOS INTERESANTES: EMAILS
+vista de informacion del sistema donde muestre toda la info importante en un menu
+
+arreglar extraccion de registros que fallan al crear un caso nuevo
+
+ya se extrae hashes de mail en archivos interesantes, mostrarlo de alguna forma
+
 
 
