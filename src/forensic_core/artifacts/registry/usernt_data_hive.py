@@ -184,24 +184,6 @@ def extraer_ntuser_artefactos(ntuser_path, db_path):
     );
     """)
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS open_save_mru (
-        extension TEXT,
-        entry_name TEXT,
-        path TEXT,
-        username TEXT,
-        FOREIGN KEY(username) REFERENCES users(username)
-    );
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS muicache (
-        entry_name TEXT,
-        description TEXT,
-        username TEXT,
-        FOREIGN KEY(username) REFERENCES users(username)
-    );
-    """)
 
     conn.commit()
 
@@ -276,35 +258,6 @@ def extraer_ntuser_artefactos(ntuser_path, db_path):
             cursor.execute("INSERT INTO mountpoints2 VALUES (?, ?, ?, ?)", (vol, label, data, username))
     except Exception as e:
         print(f"[!] Error extrayendo MountPoints2: {e}")
-
-
-    # LASTVISITEDMRU 
-    try:
-        last_visited = reg.open("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ComDlg32\\LastVisitedMRU")
-        for val in last_visited.values():
-            if val.name() != "MRUList":
-                try:
-                    entry_name = val.name()
-                    path = val.value()
-                    if isinstance(path, bytes):
-                        path = path.decode("utf-16le", errors='ignore').split('\x00')[0]
-                    cursor.execute("INSERT INTO open_save_mru VALUES (?, ?, ?, ?)",
-                                ("LastVisitedMRU", entry_name, path, username))
-                except Exception:
-                    continue
-    except Exception as e:
-        print(f"[!] Error extrayendo LastVisitedMRU: {e}")
-
-
-    # MUICACHE
-    try:
-        muicache_path = "Software\\Microsoft\\Windows\\ShellNoRoam\\MUICache"
-        muicache = reg.open(muicache_path)
-        for val in muicache.values():
-            cursor.execute("INSERT INTO muicache VALUES (?, ?, ?)", (val.name(), val.value(), username))
-    except Exception as e:
-        print(f"[!] Error extrayendo MUICache: {e}")
-
 
 
     # OpenSavePidlMRU y LastVisitedPidlMRU

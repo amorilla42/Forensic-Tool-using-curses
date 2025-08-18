@@ -90,7 +90,7 @@ class ForensicTools:
     def open_case(self):
         caso_seleccionado = self.seleccionar_caso_existente()
         if caso_seleccionado is None:
-            return
+            return None
         self.caso_dir = os.path.join(CASES_DIR, caso_seleccionado)
         self.db_path = os.path.join(self.caso_dir, f"{caso_seleccionado}.db")
         self.nombre_caso = caso_seleccionado
@@ -101,6 +101,7 @@ class ForensicTools:
         cursor.execute("SELECT e01_path FROM case_info WHERE case_name = ?", (self.nombre_caso,))
         self.e01_path = cursor.fetchone()[0]
         conn.close()
+        return 1
 
 
         
@@ -116,7 +117,102 @@ class ForensicTools:
         cases = sorted(cases)
         menu = AwesomeMenu(title="Seleccione una opcion", options=cases)
         selected_option = menu.render()
+        if selected_option is None:
+            return None
         return cases[selected_option]
+
+
+    def _scrollable_text(self, stdscr, title, text):
+        max_y, max_x = stdscr.getmaxyx()
+        win = curses.newwin(max_y - 2, max_x - 2, 1, 1)
+        win.keypad(True)
+
+        lines = text.splitlines()
+        off = 0
+        visible = max_y - 4  # caja + footer
+        while True:
+            win.clear()
+            win.box()
+            # header
+            header = f" {title} "
+            win.addstr(0, max(1, (max_x - 2 - len(header)) // 2), header, curses.A_BOLD)
+
+            # body
+            for i, line in enumerate(lines[off:off+visible]):
+                win.addstr(1 + i, 2, line[:max_x - 6])
+
+            # footer
+            footer = "↑/↓: desplazar  |  q/ESC: salir"
+            win.addstr(max_y - 3, max(2, (max_x - 2 - len(footer)) // 2), footer)
+
+            win.refresh()
+            key = win.getch()
+            if key in (ord('q'), 27):
+                win.clear()
+                win.refresh()
+                break
+            elif key == curses.KEY_UP and off > 0:
+                off -= 1
+            elif key == curses.KEY_DOWN and off + visible < len(lines):
+                off += 1
+
+    def _show_help(self):
+        # Obtener el hash del caso desde la base de datos
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT hash_sha256 FROM case_info WHERE case_name = ?", (self.nombre_caso,))
+        case_hash_sha256 = cursor.fetchone()
+        conn.close()
+
+        case_hash_sha256 = case_hash_sha256[0] if case_hash_sha256 else "—"
+        # Construye ayuda dinámica con datos del caso
+        nombre = self.nombre_caso or "—"
+        caso_dir = self.caso_dir or "—"
+        db_path = self.db_path or "—"
+        e01 = self.e01_path or "—"
+
+        help_text = f"""    MENU PRINCIPAL
+    F1  Ayuda                   (muestra esta ventana)
+    F2  Usuarios                (información de usuarios extraídos del SAM y descifrado de contraseñas)
+    F3  Visualizar Registros    (registros del sistema, eventos, etc.)
+    F5  Buscar                  (archivos por nombre, tipo, etc.)
+    F6  Artefactos de usuarios  (archivos interesantes clasificados por usuario, historial de busqueda de mavegador, etc.)
+    ESC Salir
+
+    FLUJO BÁSICO
+    1) Crear/abrir caso
+    2) Indexar imagen (.E01) si es nuevo
+    3) Explorar: Usuarios / Registros / Búsqueda / Artefactos
+
+    INFORMACION DEL CASO (actual)
+    - Caso: {nombre}
+    - Directorio: {caso_dir}
+    - Base de datos: {db_path}
+    - Imagen E01 donde se extrae la informacion: {e01}
+    - Hash SHA256 de la imagen .E01: {case_hash_sha256}
+
+    ESTRUCTURA DEL CASO
+    {caso_dir}
+        ├─ {os.path.basename(db_path) if db_path != "—" else "<db>"} (base de datos SQLite con todos los datos del caso)
+        ├─ archivos_interesantes/   (archivos exportados de interes)
+        ├─ browsers/...             (historial de navegacion por perfiles de usuario)
+        ├─ temp/                    (archivos temporales de artefactos comunes para analizar)
+        └─ exported_files/          (archivos exportados por el usuario de esta herramienta)
+
+    BUENAS PRÁCTICAS FORENSES
+    - No modificar la imagen .E01 original
+    - Verificar SHA256 de la imagen y archivos exportados
+    - Conservar hashes (p.ej., hashes.json en .eml)
+    - Registrar fecha y hora de acciones
+    - Documentar hallazgos y sospechas
+    - Mantener un registro de cambios en el caso
+    - Seguir protocolos de cadena de custodia
+    - Realizar copias de seguridad periódicas
+    - Mantener un entorno controlado y aislado
+    """.rstrip("\n")
+
+        self._scrollable_text(self.ui.stdscr, "AYUDA BASICA", help_text)
+
 
 
     def run(self):
@@ -128,7 +224,9 @@ class ForensicTools:
         if selected_option == 0:
             self.new_case()
         elif selected_option == 1:
-            self.open_case()
+            caso_abierto=self.open_case()
+            if caso_abierto is None:
+                return
 
         while True:
             self.ui.draw_header("ANALIZADOR FORENSE E01")
@@ -141,6 +239,8 @@ class ForensicTools:
                 self.ui.stdscr.addstr(0, 0, "ssisisisisi")
                 self.ui.stdscr.refresh()
                 self.ui.stdscr.getch()
+            elif key == curses.KEY_F1:
+                self._show_help()
             elif key == curses.KEY_F2:
                 visualizar_usuarios(self.db_path)
             elif key == ord('a'):    #####curses.KEY_F3:

@@ -343,9 +343,7 @@ def resolver_traynotify_guids(db_path, guid_string):
 
         # 2) muicache (a veces contiene rutas/entradas con GUID)
         if not descr:
-            cur.execute("""
-                SELECT description FROM muicache WHERE entry_name LIKE ?
-            """, (f"%{g}%",))
+            cur.execute("SELECT value_data FROM muicache WHERE value_name LIKE ?", (f"%{g}%",))
             row = cur.fetchone()
             if row and row[0]:
                 descr = f"{row[0]} [{g}]"
@@ -527,6 +525,58 @@ def format_firefox_history_table(rows, screen_width=120, selected_index=None, sh
     return "\n".join(out)
 
 
+def format_muicache_table(rows, screen_width=120, selected_index=None, show_popup=False, win=None, hide_system=False):
+    name_w = int(screen_width * 0.34)
+    desc_w = int(screen_width * 0.28)
+    key_w  = int(screen_width * 0.22)
+    time_w = screen_width - (name_w + desc_w + key_w + 6)
+
+    out = []
+    header = f"{'Entrada (ruta/EXE)':<{name_w}}│ {'Descripción':<{desc_w}}│ {'Clave':<{key_w}}│ {'Timestamp':<{time_w}}"
+    sep = "─" * len(header)
+    out.append(header)
+    out.append(sep)
+
+    # Filtro "sistema" (ej.: @shell32.dll..., rutas de Windows)
+    def es_sistema(v):
+        s = (v or "").lower()
+        return s.startswith("@shell32.dll") or s.startswith("@c:\\windows") or "\\windows\\" in s
+
+    # Construir filas visibles
+    visibles = []
+    for row in rows:
+        if len(row) != 4:
+            continue
+        value_name, value_data, key_path, ts = row
+        if hide_system and es_sistema(value_name):
+            continue
+        visibles.append((value_name, value_data, key_path, ts))
+
+    for idx, (value_name, value_data, key_path, ts) in enumerate(visibles):
+        out.append(
+            f"{recortar_columna(value_name, name_w):<{name_w}}│ "
+            f"{recortar_columna(value_data, desc_w):<{desc_w}}│ "
+            f"{recortar_columna(key_path,  key_w):<{key_w}}│ "
+            f"{recortar_columna(ts,        time_w):<{time_w}}"
+        )
+
+    # Popup de detalle
+    if show_popup and win is not None and selected_index is not None and 0 <= selected_index < len(visibles):
+        import textwrap
+        value_name, value_data, key_path, ts = visibles[selected_index]
+        max_y, max_x = win.getmaxyx()
+        w = max_x - 4
+        wrap = lambda t: textwrap.fill("" if t is None else str(t), width=w)
+
+        contenido = (
+            f"Entrada (ruta/EXE):\n{wrap(value_name)}\n\n"
+            f"Descripción:\n{wrap(value_data)}\n\n"
+            f"Clave de registro:\n{wrap(key_path)}\n\n"
+            f"Timestamp:\n{wrap(ts)}"
+        )
+        show_scrollable_popup(win, contenido, title="Detalle MuiCache")
+
+    return "\n".join(out)
 
 
 
@@ -603,8 +653,7 @@ class UserntDataViewer(Renderizable):
             "Documentos recientes",
             "Comandos ejecutados (Win+R)",
             "Dispositivos conectados (USB y similares)",
-            "Archivos abiertos/guardados recientemente",
-            "Ejecuciones visualizadas por Explorer",
+            "Programas visualizados en Explorer (MuiCache)",
             "ShellBags",
             "MRU (archivos usados recientemente)",
             "TrayNotify: ejecutables e información del systray",
@@ -648,8 +697,7 @@ class UserntDataViewer(Renderizable):
             ("recent_docs", "extension, document_name"),
             ("run_mru", "order_key, command"),
             ("mountpoints2", "key_name, volume_label, data"),
-            ("open_save_mru", "extension, entry_name, path"),
-            ("muicache", "entry_name, description"),
+            ("muicache", "value_name, value_data, key_path, timestamp"),
             ("shellbags", "user, path, key_path, timestamp"),
             ("mru_entries", "user, mru_type, extension, file_name, key_path, timestamp"),
             ("traynotify_executables", "user, source, exe_name, extension_type, suspicious, key_path, timestamp"),
@@ -665,8 +713,7 @@ class UserntDataViewer(Renderizable):
             "recent_docs": "username",
             "run_mru": "username",
             "mountpoints2": "username",
-            "open_save_mru": "username",
-            "muicache": "username",
+            "muicache": "user",
             "shellbags": "user",
             "mru_entries": "user",
             "traynotify_executables": "user",
@@ -685,7 +732,6 @@ class UserntDataViewer(Renderizable):
             "Documentos abiertos recientemente",
             "Comandos lanzados con Win+R",
             "Dispositivos externos conectados",
-            "Archivos recientes en diálogos Abrir/Guardar",
             "Programas visualizados en Explorer (MuiCache)",
             "ShellBags",
             "MRU (archivos usados recientemente)",
@@ -712,7 +758,99 @@ class UserntDataViewer(Renderizable):
             rows = list(dict.fromkeys(rows))   # elimina duplicados manteniendo orden
             info = format_mountpoints2_table(rows, screen_width=max_x - 4)
         
-        elif index == 6:  # ShellBags
+        elif index == 4:  # Muicache
+            selected = 0
+            scroll_offset = 0
+            self.layout.change_footer("")
+
+            # Cargamos (o recargamos) las filas para este usuario
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT value_name, value_data, key_path, timestamp FROM muicache WHERE user=? ORDER BY value_name",
+                (username,)
+            )
+            mui_rows = cursor.fetchall()
+            conn.close()
+
+            while True:
+                self.win.clear()
+                max_y, max_x = self.win.getmaxyx()
+                self.win.box()
+
+                title = " MuiCache (programas visualizados por Explorer) "
+                self.win.addstr(0, max(2, (max_x - len(title)) // 2), title, curses.A_BOLD)
+
+                footer = " ↑/↓: Navegar  ENTER: Detalle  s: Mostrar/ocultar sistema  ESC/q: Salir "
+                self.win.addstr(max_y - 1, max(2, (max_x - len(footer)) // 2), footer, curses.A_BOLD)
+
+                tabla = format_muicache_table(
+                    mui_rows,
+                    screen_width=max_x - 4,
+                    selected_index=selected,
+                    hide_system=not self.show_system_entries
+                )
+                lineas = tabla.split("\n")
+
+                header_lines = 2
+                visible_height = max_y - 2
+                total_lines = len(lineas)
+
+                # Recalcular número real de filas visibles tras el filtro (para clamp de selected)
+                # Aproximación: contar líneas de datos (total - header_lines)
+                data_count = max(0, total_lines - header_lines)
+                if data_count == 0:
+                    selected = 0
+                else:
+                    selected = max(0, min(selected, data_count - 1))
+
+                selected_line = selected + header_lines
+                if selected_line < scroll_offset + header_lines:
+                    scroll_offset = selected_line - header_lines
+                elif selected_line >= scroll_offset + visible_height:
+                    scroll_offset = selected_line - visible_height + 1
+
+                max_scroll = max(0, total_lines - visible_height)
+                scroll_offset = max(0, min(scroll_offset, max_scroll))
+
+                visibles = lineas[scroll_offset:scroll_offset + visible_height]
+                for i, line in enumerate(visibles):
+                    y = i + 1
+                    abs_line = scroll_offset + i
+                    if abs_line >= header_lines:
+                        data_idx = abs_line - header_lines
+                        attr = curses.A_REVERSE if data_idx == selected else curses.A_NORMAL
+                    else:
+                        attr = curses.A_BOLD if abs_line == 0 else curses.A_NORMAL
+                    self.win.addstr(y, 2, line[:max_x - 4], attr)
+
+                self.win.refresh()
+                key = self.win.getch()
+
+                if key == curses.KEY_UP:
+                    if data_count:
+                        selected = (selected - 1) % data_count
+                elif key == curses.KEY_DOWN:
+                    if data_count:
+                        selected = (selected + 1) % data_count
+                elif key in (10, 13):  # ENTER
+                    if data_count:
+                        format_muicache_table(
+                            mui_rows, screen_width=max_x - 4,
+                            selected_index=selected, show_popup=True, win=self.win,
+                            hide_system=not self.show_system_entries
+                        )
+                elif key == ord('s'):
+                    # Alternar mostrar/ocultar entradas del sistema
+                    self.show_system_entries = not self.show_system_entries
+                    selected = 0
+                    scroll_offset = 0
+                elif key in (27, ord("q")):
+                    self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
+                    return
+
+
+        elif index == 5:  # ShellBags
             selected = 0
             scroll_offset = 0
 
@@ -814,7 +952,7 @@ class UserntDataViewer(Renderizable):
                     selected = 0
                     scroll_offset = 0
 
-        elif index == 7:  # MRU entries
+        elif index == 6:  # MRU entries
             selected = 0
             while True:
                 self.win.clear()
@@ -847,7 +985,7 @@ class UserntDataViewer(Renderizable):
                 elif key in (27, ord("q")):
                     self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
                     return
-        elif index == 9:  # TrayNotify metadata
+        elif index == 8:  # TrayNotify metadata
             selected = 0
             scroll_offset = 0
             self.layout.change_footer("")
@@ -923,7 +1061,7 @@ class UserntDataViewer(Renderizable):
                     conn.close()
                     self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
                     return
-        elif index == 10:  # Historial de navegador (Firefox)
+        elif index == 9:  # Historial de navegador (Firefox)
             selected = 0
             scroll_offset = 0
             self.layout.change_footer("")
@@ -1026,8 +1164,7 @@ class UserntDataViewer(Renderizable):
             ("recent_docs", "Documentos abiertos recientemente", "extension, document_name"),
             ("run_mru", "Comandos lanzados con Win+R", "order_key, command"),
             ("mountpoints2", "Dispositivos externos conectados", "key_name, volume_label, data"),
-            ("open_save_mru", "Archivos recientes en diálogos Abrir/Guardar", "extension, entry_name, path"),
-            ("muicache", "Programas visualizados en Explorer (MuiCache)", "entry_name, description"),
+            ("muicache", "Programas visualizados en Explorer (MuiCache)", "value_name, value_data, key_path, timestamp"),
             ("shellbags", "ShellBags", "user, path, key_path, timestamp"),
             ("mru_entries", "MRU (archivos usados recientemente)", "user, mru_type, extension, file_name, key_path, timestamp"),
             ("traynotify_executables", "TrayNotify: ejecutables e información del systray", "user, source, exe_name, extension_type, suspicious, key_path, timestamp"),
@@ -1040,8 +1177,7 @@ class UserntDataViewer(Renderizable):
             "recent_docs": "username",
             "run_mru": "username",
             "mountpoints2": "username",
-            "open_save_mru": "username",
-            "muicache": "username",
+            "muicache": "user",
             "shellbags": "user",
             "mru_entries": "user",
             "traynotify_executables": "user",

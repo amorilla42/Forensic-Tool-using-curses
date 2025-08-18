@@ -3,7 +3,7 @@ from Registry import Registry
 from datetime import datetime, timezone
 
 from curses_ui.awesome_layout import AwesomeLayout
-from curses_ui.system_info_view import SystemInfoViewer
+
 
 def extraer_system(db_path, hive_path):
 
@@ -199,20 +199,3 @@ def extraer_system(db_path, hive_path):
 
     
 
-"""
-    metadata, services, usb_devices, power = get_system_info_data(db_path)
-    system_info = {
-    "last_boot_time": metadata.get("last_boot_time", "Desconocido"),
-    "services": services,
-    "usb_devices": usb_devices,
-    "power_schemes": power
-    }
-
-
-    layout = AwesomeLayout()
-    layout.render()
-    layout.change_header("Información del Sistema")
-    layout.change_footer("Presiona TAB para alternar entre ventanas, 1-4 elegir ventana, ESC para salir")
-    
-    SystemInfoViewer(system_info, layout.body_win).render()
-"""

@@ -3,6 +3,30 @@ import sqlite3
 from Registry import Registry
 from datetime import datetime
 
+
+def _to_text_any(v):
+    if isinstance(v, (bytes, bytearray)):
+        for enc in ("utf-16le", "utf-8", "latin-1"):
+            try:
+                return v.decode(enc)
+            except Exception:
+                pass
+        return v.hex()
+    return str(v)
+
+def _normalize_path(p):
+    if p is None:
+        return None
+    p = str(p).strip()
+    if len(p) > 1 and p[0] == p[-1] == '"':
+        p = p[1:-1]              # quitar comillas envolventes
+    if p in ("", "1"):
+        return None
+    return p
+
+
+
+
 def extraer_software(software_path, db_path):
     reg = Registry.Registry(software_path)
     conn = sqlite3.connect(db_path)
@@ -15,6 +39,7 @@ def extraer_software(software_path, db_path):
     cursor.execute("DROP TABLE IF EXISTS run_once_entries;")
     cursor.execute("DROP TABLE IF EXISTS installed_components;")
     cursor.execute("DROP TABLE IF EXISTS app_paths;")
+    cursor.execute("DROP TABLE IF EXISTS app_paths_meta;")
     cursor.execute("DROP TABLE IF EXISTS svchost_groups;")
 
     # Crear tabla de información del sistema
@@ -74,6 +99,17 @@ def extraer_software(software_path, db_path):
     );
     """)
 
+    # (opcional) Metadatos de App Paths: todos los valores del subkey
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS app_paths_meta (
+        executable TEXT,
+        value_name TEXT,
+        value_data TEXT,
+        key_path TEXT,
+        timestamp TEXT
+    );
+    """)
+
     # Tabla para grupos de servicios en svchost
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS svchost_groups (
@@ -89,6 +125,7 @@ def extraer_software(software_path, db_path):
     cursor.execute("DELETE FROM run_once_entries;")
     cursor.execute("DELETE FROM installed_components;")
     cursor.execute("DELETE FROM app_paths;")
+    cursor.execute("DELETE FROM app_paths_meta;") 
     cursor.execute("DELETE FROM svchost_groups;")
 
 
@@ -189,17 +226,57 @@ def extraer_software(software_path, db_path):
 
 
 
-    # App Paths
+    # App Paths (HKLM). Incluye Wow6432Node si existe.
     try:
-        app_paths = reg.open("Microsoft\\Windows\\CurrentVersion\\App Paths")
-        for sub in app_paths.subkeys():
-            exe = sub.name()
-            path = sub.values()[0].value()
-            if isinstance(path,str) and len(path)>1 and (path.startswith('"') and path.endswith('"')):
-                path = path[1:-1]
-            if (isinstance(path, int) and path == 1) or (isinstance(path, str) and path == "1" or path == ""):
-                path = None
-            cursor.execute("INSERT INTO app_paths VALUES (?, ?)", (exe, path))
+        for root in [
+            r"Microsoft\Windows\CurrentVersion\App Paths",
+            r"Wow6432Node\Microsoft\Windows\CurrentVersion\App Paths",
+        ]:
+            try:
+                app_paths_root = reg.open(root)
+            except Registry.RegistryKeyNotFoundException:
+                continue
+
+            for sub in app_paths_root.subkeys():
+                exe = sub.name()
+                key_path = sub.path()
+                ts = sub.timestamp().isoformat()
+
+                # 1) (Default)
+                ruta = None
+                try:
+                    ruta = _normalize_path(_to_text_any(sub.value("").value()))
+                except Exception:
+                    ruta = None
+
+                # 2) Fallback: "Path" + exe
+                if not ruta:
+                    try:
+                        base_dir = _normalize_path(_to_text_any(sub.value("Path").value()))
+                        if base_dir:
+                            ruta = os.path.join(base_dir, exe)
+                    except Exception:
+                        pass
+
+                # 3) Guarda fila principal (aunque ruta sea None)
+                try:
+                    cursor.execute("INSERT INTO app_paths (executable, path) VALUES (?, ?)", (exe, ruta))
+                except Exception:
+                    pass
+
+                # 4) guardar TODOS los valores como metadatos
+                try:
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='app_paths_meta'")
+                    if cursor.fetchone():
+                        for v in sub.values():
+                            vname = v.name() if v.name() else "(Default)"
+                            vdata = _to_text_any(v.value())
+                            cursor.execute("""
+                                INSERT INTO app_paths_meta (executable, value_name, value_data, key_path, timestamp)
+                                VALUES (?, ?, ?, ?, ?)
+                            """, (exe, vname, vdata, key_path, ts))
+                except Exception:
+                    pass
     except Exception as e:
         print("[!] Error extrayendo App Paths:", e)
 

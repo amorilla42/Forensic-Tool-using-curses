@@ -47,11 +47,69 @@ def crear_base_datos(db_path):
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS muicache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user TEXT,
+            value_name TEXT,
+            value_data TEXT,
+            key_path TEXT,
+            timestamp TEXT,
+            FOREIGN KEY(user) REFERENCES users(username)
+        )
+    ''')
+
     conn.commit()
     return conn
 
+def _to_text(raw):
+    if isinstance(raw, (bytes, bytearray)):
+        for enc in ("utf-16le", "utf-8", "latin-1"):
+            try:
+                return raw.decode(enc)
+            except Exception:
+                pass
+        return raw.hex()  # último recurso
+    return str(raw)
 
+def _limpiar_key_path_usrclass(path):
+    # Reemplaza el SID_Classes por UsrClass.dat para que sea más legible en informes
+    return re.sub(r"S-1-5-21-\d+-\d+-\d+-\d+_Classes", "UsrClass.dat", path)
 
+def extraer_mui_cache_usrclass(reg, user, conn):
+    cursor = conn.cursor()
+    candidates = [
+        r"Local Settings\Software\Microsoft\Windows\Shell\MuiCache"
+    ]
+    encontrados = 0
+
+    for muipath in candidates:
+        try:
+            key = reg.open(muipath)
+        except Registry.RegistryKeyNotFoundException:
+            continue
+
+        encontrados += 1
+        key_path = _limpiar_key_path_usrclass(key.path())
+        ts = key.timestamp().isoformat()
+
+        for val in key.values():
+            name = val.name()
+            if name.lower() == "langid":
+                continue
+
+            data = _to_text(val.value())
+            try:
+                cursor.execute('''
+                    INSERT INTO muicache (user, value_name, value_data, key_path, timestamp)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (user, name, data, key_path, ts))
+            except Exception as e:
+                # No frenar por una fila problemática
+                print(f"[!] MUICache: error insertando {name!r}: {e}")
+
+    if not encontrados:
+        print("[i] MUICache: no se encontró la clave en este USRCLASS.DAT")
 
 
 def extraer_shellbags(reg, user, conn):
@@ -207,6 +265,8 @@ def extraer_usrclass(dat_path, db_path):
 
     extraer_shellbags(reg, user_name, conn)
     extraer_traynotify(reg, user_name, conn)
+    extraer_mui_cache_usrclass(reg, user_name, conn)
+    
     conn.commit()
     conn.close()
 

@@ -30,16 +30,15 @@ INFORMACION DEL SISTEMA
 Informacion de usuarios locales del sistema
     Artefactos de usuarios
             Programas ejecutados (Menú Inicio)
-            Documentos recientes
+            Documentos abiertos recientemente
             Comandos ejecutados (Win+R)
             Dispositivos conectados (USB y similares)
-            Archivos abiertos/guardados recientemente
-            Ejecuciones visualizadas por Explorer
+            Programas visualizados en Explorer (MuiCache)
             Exportar toda la información a archivo .txt
-            Activar/Desactivar entradas del sistema en MuiCache
             ShellBags
             MRU (archivos usados recientemente)
             TrayNotify: ejecutables e información del systray
+            TrayNotify: metadatos de entradas del systray
             HISTORIAL DE BUSQUEDAS DE INTERNET
     Extracción y Cracking de Credenciales de Usuario usando hashcat y el diccionario rockyou.txt
     EXTRACCION DE ARCHIVOS INTERESANTES DE TODO EL SISTEMA: pdfs, fotos, emails, archivos borrados, .doc, .txt, archivos comprimidos, etc.
@@ -51,11 +50,14 @@ Informacion de usuarios locales del sistema
 
 INTEGRACION DE VIRUSTOTAL
 
-vista de informacion del sistema donde muestre toda la info importante en un menu
+vista de informacion del sistema donde muestre toda la info importante en un menu F4??
 
 arreglar extraccion de registros que fallan al crear un caso nuevo
 
 ya se extrae hashes de mail en archivos interesantes, mostrarlo de alguna forma
 
+NUEVA VENTANA DE AYUDA COMPLETAR CON COSAS NUEVAS/REVISAR
 
+QUE SE CALCULE EL HASH256 DEL .E01 Y EL MD5 Y QUE SE MUESTRE EN EL MENU DEL F1
 
+MOSTRAR HASH DE LOS ARCHIVOS CUANDO LE DAS A VER INFO DEL ARCHIVO PORDENTRO Y SALEN LOS METADATOS A LA IZQUIERDA
