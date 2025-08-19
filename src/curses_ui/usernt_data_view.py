@@ -110,6 +110,77 @@ def parse_userassist_line(line):
         return None
 
 
+def normalize_recent_docs_rows(rows):
+    """Filtra vacíos/no imprimibles, quita duplicados y normaliza 'folder' -> 'Carpeta'."""
+    def _is_printable(s):
+        import string
+        return all(c in string.printable for c in s)
+
+    rows = [r for r in rows if r and len(r) == 2 and all(r) and _is_printable(str(r[1]))]
+    rows = list(dict.fromkeys(rows))  # dedup conservando orden
+    norm = []
+    for ext, name in rows:
+        ext = (ext or "")
+        if ext.lower() == "folder":
+            ext = "Carpeta"
+        norm.append((ext, name))
+    return norm
+
+def show_userassist_detail_popup(win, parsed_item):
+    """parsed_item = (tipo, ruta_legible, count, tiempo)"""
+    import textwrap
+    tipo, ruta, count, tiempo = parsed_item
+    max_y, max_x = win.getmaxyx()
+    w = max_x - 4
+    body = (
+        f"Tipo:\n{tipo}\n\n"
+        f"Ruta / Identificador:\n{textwrap.fill(str(ruta or ''), width=w)}\n\n"
+        f"Veces: {count}\n\n"
+        f"Última ejecución: {tiempo}"
+    )
+    show_scrollable_popup(win, body, "Detalle UserAssist")
+
+def show_recent_doc_detail_popup(win, item):
+    """item = (ext, name) ya normalizados."""
+    import textwrap
+    ext, name = item
+    max_y, max_x = win.getmaxyx()
+    w = max_x - 4
+    body = (
+        f"Extensión:\n{ext}\n\n"
+        f"Nombre del documento:\n{textwrap.fill(str(name or ''), width=w)}"
+    )
+    show_scrollable_popup(win, body, "Detalle documento reciente")
+
+def recortar_columna_mnt(texto, ancho):
+    s = "" if texto is None else str(texto).replace("\n", " ")
+    return s if len(s) <= ancho else s[:ancho-1] + "…"
+
+def normalize_mountpoints_rows(rows):
+    """
+    rows: [(key_name, volume_label, data), ...]
+    Devuelve lista normalizada y deduplicada: [(key_name, label, destino_resuelto), ...]
+    """
+    norm = []
+    vistos = set()
+    for r in rows:
+        if not r or len(r) < 3:
+            continue
+        key_name, label, data = r
+        key = "" if key_name is None else str(key_name).strip()
+        lbl = "" if label    is None else str(label).strip()
+        raw = ("" if data is None else str(data).strip()) or key  # usa data si hay, si no key
+        try:
+            resolved = traducir_guids(raw)
+        except Exception:
+            resolved = raw
+        t = (key, lbl, resolved)
+        if t in vistos:
+            continue
+        vistos.add(t)
+        norm.append(t)
+    return norm
+
 
 def is_printable(s):
     import string
@@ -145,43 +216,28 @@ def format_recent_docs_table(rows, screen_width=120):
 
 
 def format_mountpoints2_table(rows, screen_width=120):
-    from utils.guid_aliases import traducir_guids
+    """
+    rows normalizados: [(key_name, label, destino_resuelto), ...]
+    Muestra: Clave │ Etiqueta │ Identificador / Ruta (resuelto)
+    """
+    key_w   = int(screen_width * 0.30)
+    label_w = int(screen_width * 0.20)
+    dest_w  = screen_width - (key_w + label_w + 6)
 
-    def is_guid(text):
-        return (
-            isinstance(text, str)
-            and text.startswith("{")
-            and text.endswith("}")
-            and len(text) >= 36
+    out = []
+    header = f"{'Clave':<{key_w}}│ {'Etiqueta':<{label_w}}│ {'Identificador / Ruta (resuelto)':<{dest_w}}"
+    sep = "─" * len(header)
+    out.append(header)
+    out.append(sep)
+
+    for key, lbl, dest in rows:
+        out.append(
+            f"{recortar_columna_mnt(key,  key_w):<{key_w}}│ "
+            f"{recortar_columna_mnt(lbl,  label_w):<{label_w}}│ "
+            f"{recortar_columna_mnt(dest, dest_w):<{dest_w}}"
         )
+    return "\n".join(out)
 
-    output = []
-    header = f"{'Identificador / Ruta':<{screen_width - 4}}"
-    separator = "─" * len(header)
-    output.append(header)
-    output.append(separator)
-
-    vistos = set()
-    rutas_traducidas = []
-
-    for ruta, _, _ in rows:
-        if ruta is None or str(ruta).strip() == "":
-            continue
-        ruta_str = str(ruta).strip()
-        if ruta_str in vistos:
-            continue
-        vistos.add(ruta_str)
-
-        traducida = traducir_guids(ruta_str)
-        rutas_traducidas.append((ruta_str, traducida))
-
-    # Ordenar: primero alias legibles, luego GUID puros
-    rutas_traducidas.sort(key=lambda x: is_guid(x[1]))
-
-    for _, traducida in rutas_traducidas:
-        output.append(f"{traducida:<{screen_width - 4}}")
-
-    return "\n".join(output)
 
 def recortar_columna_shellbag_table(texto, ancho):
     return texto if len(texto) <= ancho else texto[:ancho-1] + "…"
@@ -579,6 +635,88 @@ def format_muicache_table(rows, screen_width=120, selected_index=None, show_popu
     return "\n".join(out)
 
 
+def _yesno(v):
+    try:
+        return "Sí" if int(v) == 1 else "No"
+    except Exception:
+        return "Sí" if str(v).strip().lower() in ("1", "true", "yes") else "No"
+
+
+def format_runmru_table(rows, screen_width=120, selected_index=None, show_popup=False, win=None, username=None):
+    ord_w = 10
+    cmd_w = screen_width - ord_w - 3
+    out = []
+    header = f"{'Orden':<{ord_w}}│ {'Comando':<{cmd_w}}"
+    sep = "─" * len(header)
+    out.append(header)
+    out.append(sep)
+
+    for idx, row in enumerate(rows):
+        if len(row) != 2:
+            continue
+        order_key, command = row
+        out.append(f"{recortar_columna(str(order_key), ord_w):<{ord_w}}│ {recortar_columna(str(command), cmd_w):<{cmd_w}}")
+
+    # Popup detalle
+    if show_popup and win is not None and selected_index is not None and 0 <= selected_index < len(rows):
+        import textwrap
+        order_key, command = rows[selected_index]
+        max_y, max_x = win.getmaxyx()
+        w = max_x - 4
+        usuario = username if username else "(desconocido)"
+        detalle = (
+            f"Usuario: {usuario}\n\n"
+            f"Orden:\n{order_key}\n\n"
+            f"Comando:\n{textwrap.fill(str(command), width=w)}"
+        )
+        show_scrollable_popup(win, detalle, "Detalle RunMRU")
+    return "\n".join(out)
+
+
+def format_traynotify_exec_table(rows, screen_width=120, selected_index=None, show_popup=False, win=None):
+    # rows: (user, source, exe_name, extension_type, suspicious, key_path, timestamp)
+    src_w  = int(screen_width * 0.18)
+    exe_w  = int(screen_width * 0.50)
+    ext_w  = 8
+    susp_w = 11
+    time_w = screen_width - (src_w + exe_w + ext_w + susp_w + 7)
+
+    out = []
+    header = f"{'Origen':<{src_w}}│ {'Ejecutable':<{exe_w}}│ {'Ext':<{ext_w}}│ {'Sospechoso':^{susp_w}} │ {'Timestamp':<{time_w}}"
+    sep = "─" * len(header)
+    out.append(header)
+    out.append(sep)
+
+    for row in rows:
+        if len(row) != 7:
+            continue
+        user, source, exe_name, extension_type, suspicious, key_path, ts = row
+        out.append(
+            f"{recortar_columna(str(source), src_w):<{src_w}}│ "
+            f"{recortar_columna(str(exe_name), exe_w):<{exe_w}}│ "
+            f"{recortar_columna(str(extension_type), ext_w):<{ext_w}}│ "
+            f"{_yesno(suspicious):^{susp_w}} │ "
+            f"{recortar_columna(str(ts), time_w):<{time_w}}"
+        )
+
+    # Popup detalle
+    if show_popup and win is not None and selected_index is not None and 0 <= selected_index < len(rows):
+        import textwrap
+        user, source, exe_name, extension_type, suspicious, key_path, ts = rows[selected_index]
+        max_y, max_x = win.getmaxyx()
+        w = max_x - 4
+        detalle = (
+            f"Usuario: {user}\n\n"
+            f"Origen:\n{source}\n\n"
+            f"Ejecutable:\n{textwrap.fill(str(exe_name), width=w)}\n\n"
+            f"Extensión: {extension_type}\n"
+            f"Sospechoso: {_yesno(suspicious)}\n\n"
+            f"Key path:\n{textwrap.fill(str(key_path), width=w)}\n\n"
+            f"Timestamp: {ts}"
+        )
+        show_scrollable_popup(win, detalle, "Detalle TrayNotify (ejecutable)")
+    return "\n".join(out)
+
 
 
 class UserntDataViewer(Renderizable):
@@ -740,23 +878,301 @@ class UserntDataViewer(Renderizable):
             "Historial de navegador (Firefox)"
         ]
 
-        if index == 0:
-            max_y, max_x = self.win.getmaxyx()
-            #TODO: BORRAR DESPUES
-            #from forensic_core.artifact_extractor import extraer_artefactos
-            #extraer_artefactos(self.db_path, os.path.dirname(self.db_path))
-            info = format_userassist_table([", ".join(str(col) for col in row) for row in rows], screen_width=max_x - 4)
-        
-        elif index == 1: # Documentos recientes
-            max_y, max_x = self.win.getmaxyx()
-            rows = [r for r in rows if all(r)]  # elimina vacíos
-            rows = list(dict.fromkeys(rows))   # elimina duplicados manteniendo orden
-            info = format_recent_docs_table(rows, screen_width=max_x - 4)
+        if index == 0:  # Programas ejecutados (Menú Inicio) - UserAssist
+            selected = 0
+            data_scroll = 0
+            self.layout.change_footer("")
 
-        elif index == 3: # Dispositivos conectados
-            max_y, max_x = self.win.getmaxyx()
-            rows = list(dict.fromkeys(rows))   # elimina duplicados manteniendo orden
-            info = format_mountpoints2_table(rows, screen_width=max_x - 4)
+            raw_lines = []
+            parsed_items = []  # [(tipo, ruta_legible, count, tiempo), ...]
+            for (name, run_count, last_run_time) in rows:
+                s = f"{name}, {run_count}, {last_run_time}"
+                p = parse_userassist_line(s)
+                if not p:
+                    continue
+                raw_lines.append(s)
+                parsed_items.append(p)
+
+            while True:
+                self.win.clear()
+                max_y, max_x = self.win.getmaxyx()
+                self.win.box()
+
+                title = " Programas ejecutados (Menú Inicio) - UserAssist "
+                self.win.addstr(0, max(2, (max_x - len(title)) // 2), title, curses.A_BOLD)
+                footer = " ↑/↓: Navegar  ENTER: Detalle  ESC/q: Salir "
+                self.win.addstr(max_y - 1, max(2, (max_x - len(footer)) // 2), footer, curses.A_BOLD)
+
+                # Construimos tabla y separamos header (líneas 0-1) de datos (desde 2)
+                table = format_userassist_table(raw_lines, screen_width=max_x - 4)
+                lines = table.split("\n")
+                header_lines = lines[:2] if len(lines) >= 2 else lines
+                data_lines   = lines[2:]  if len(lines) >  2 else []
+
+                # Altura disponible para datos (quitando bordes+header+separator+footer)
+                data_height = max(0, max_y - 4)
+                data_count = len(parsed_items)
+
+                # Clamp selección y scroll
+                if data_count == 0:
+                    selected = 0
+                    data_scroll = 0
+                else:
+                    selected = max(0, min(selected, data_count - 1))
+                    if selected < data_scroll:
+                        data_scroll = selected
+                    elif selected >= data_scroll + data_height:
+                        data_scroll = selected - data_height + 1
+                    max_scroll = max(0, data_count - data_height)
+                    data_scroll = max(0, min(data_scroll, max_scroll))
+
+                # Header SIEMPRE fijo
+                if header_lines:
+                    self.win.addstr(1, 2, header_lines[0][:max_x - 4], curses.A_BOLD)
+                if len(header_lines) > 1:
+                    self.win.addstr(2, 2, header_lines[1][:max_x - 4])
+
+                # Datos visibles
+                visible_data = data_lines[data_scroll:data_scroll + data_height]
+                for i, line in enumerate(visible_data):
+                    y = 3 + i
+                    abs_idx = data_scroll + i  # índice dentro de data_lines / parsed_items
+                    attr = curses.A_REVERSE if abs_idx == selected else curses.A_NORMAL
+                    self.win.addstr(y, 2, line[:max_x - 4], attr)
+
+                self.win.refresh()
+                key = self.win.getch()
+
+                if key == curses.KEY_UP and data_count:
+                    selected = (selected - 1) % data_count
+                elif key == curses.KEY_DOWN and data_count:
+                    selected = (selected + 1) % data_count
+                elif key in (10, 13):  # ENTER
+                    if data_count:
+                        show_userassist_detail_popup(self.win, parsed_items[selected])
+                elif key in (27, ord('q')):
+                    self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
+                    return
+
+
+        
+        elif index == 1:  # Documentos recientes
+            selected = 0
+            data_scroll = 0
+            self.layout.change_footer("")
+
+            vis_rows = normalize_recent_docs_rows(rows)  # [(ext, name), ...]
+
+            while True:
+                self.win.clear()
+                max_y, max_x = self.win.getmaxyx()
+                self.win.box()
+
+                title = " Documentos abiertos recientemente "
+                self.win.addstr(0, max(2, (max_x - len(title)) // 2), title, curses.A_BOLD)
+                footer = " ↑/↓: Navegar  ENTER: Detalle  ESC/q: Salir "
+                self.win.addstr(max_y - 1, max(2, (max_x - len(footer)) // 2), footer, curses.A_BOLD)
+
+                # Construimos tabla completa pero separamos header (líneas 0-1) y datos (desde 2)
+                table = format_recent_docs_table(vis_rows, screen_width=max_x - 4)
+                lines = table.split("\n")
+                header_lines = lines[:2] if len(lines) >= 2 else lines
+                data_lines   = lines[2:]  if len(lines) >  2 else []
+
+                # Altura disponible para datos: quita 1 (borde superior), 1 (header), 1 (separator), 1 (footer) = 4
+                data_height = max(0, max_y - 4)
+
+                data_count = len(vis_rows)
+
+                # Clamp selección
+                if data_count == 0:
+                    selected = 0
+                    data_scroll = 0
+                else:
+                    selected = max(0, min(selected, data_count - 1))
+
+                    # Mantener fila seleccionada visible dentro del viewport de datos
+                    if selected < data_scroll:
+                        data_scroll = selected
+                    elif selected >= data_scroll + data_height:
+                        data_scroll = selected - data_height + 1
+
+                    # Clamp del scroll
+                    max_scroll = max(0, data_count - data_height)
+                    data_scroll = max(0, min(data_scroll, max_scroll))
+
+                # Pintar header SIEMPRE FIJO
+                if header_lines:
+                    self.win.addstr(1, 2, header_lines[0][:max_x - 4], curses.A_BOLD)
+                if len(header_lines) > 1:
+                    self.win.addstr(2, 2, header_lines[1][:max_x - 4])
+
+                # Filas visibles (solo datos)
+                visible_data = data_lines[data_scroll:data_scroll + data_height]
+
+                # Pintar datos a partir de la fila 3 (y = 3)
+                for i, line in enumerate(visible_data):
+                    y = 3 + i
+                    abs_idx = data_scroll + i  # índice real dentro de data_lines
+                    # selected referencia a vis_rows (mismo orden que data_lines)
+                    attr = curses.A_REVERSE if abs_idx == selected else curses.A_NORMAL
+                    self.win.addstr(y, 2, line[:max_x - 4], attr)
+
+                self.win.refresh()
+                key = self.win.getch()
+
+                if key == curses.KEY_UP and data_count:
+                    selected = (selected - 1) % data_count
+                elif key == curses.KEY_DOWN and data_count:
+                    selected = (selected + 1) % data_count
+                elif key in (10, 13):  # ENTER
+                    if data_count:
+                        show_recent_doc_detail_popup(self.win, vis_rows[selected])
+                elif key in (27, ord('q')):
+                    self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
+                    return
+
+
+        
+        elif index == 2:  # RunMRU (Win+R)
+            selected = 0
+            scroll_offset = 0
+            self.layout.change_footer("")
+            
+
+            while True:
+                self.win.clear()
+                max_y, max_x = self.win.getmaxyx()
+                self.win.box()
+
+                title = " Comandos ejecutados (Win+R) - RunMRU "
+                self.win.addstr(0, max(2, (max_x - len(title)) // 2), title, curses.A_BOLD)
+
+                footer = " ↑/↓: Navegar  ENTER: Detalle  ESC/q: Salir "
+                self.win.addstr(max_y - 1, max(2, (max_x - len(footer)) // 2), footer, curses.A_BOLD)
+
+                tabla = format_runmru_table(rows, screen_width=max_x - 4, selected_index=selected, username=username)
+                lineas = tabla.split("\n")
+
+                header_lines = 2
+                visible_height = max_y - 2
+                total_lines = len(lineas)
+
+                data_count = max(0, total_lines - header_lines)
+                if data_count == 0:
+                    selected = 0
+                else:
+                    selected = max(0, min(selected, data_count - 1))
+
+                selected_line = selected + header_lines
+                if selected_line < scroll_offset + header_lines:
+                    scroll_offset = selected_line - header_lines
+                elif selected_line >= scroll_offset + visible_height:
+                    scroll_offset = selected_line - visible_height + 1
+
+                max_scroll = max(0, total_lines - visible_height)
+                scroll_offset = max(0, min(scroll_offset, max_scroll))
+
+                visibles = lineas[scroll_offset:scroll_offset + visible_height]
+                for i, line in enumerate(visibles):
+                    y = i + 1
+                    abs_line = scroll_offset + i
+                    if abs_line >= header_lines:
+                        data_idx = abs_line - header_lines
+                        attr = curses.A_REVERSE if data_idx == selected else curses.A_NORMAL
+                    else:
+                        attr = curses.A_BOLD if abs_line == 0 else curses.A_NORMAL
+                    self.win.addstr(y, 2, line[:max_x - 4], attr)
+
+                self.win.refresh()
+                key = self.win.getch()
+                if key == curses.KEY_UP and data_count:
+                    selected = (selected - 1) % data_count
+                elif key == curses.KEY_DOWN and data_count:
+                    selected = (selected + 1) % data_count
+                elif key in (10, 13):  # ENTER
+                    if data_count:
+                        format_runmru_table(rows, screen_width=max_x - 4,
+                                            selected_index=selected, show_popup=True, win=self.win, username=username)
+                elif key in (27, ord("q")):
+                    self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
+                    return
+
+        elif index == 3:  # Dispositivos conectados (USB y similares) - MountPoints2
+            selected = 0
+            data_scroll = 0
+            self.layout.change_footer("")
+
+            vis_rows = normalize_mountpoints_rows(rows)  # [(key, label, destino_resuelto), ...]
+
+            while True:
+                self.win.clear()
+                max_y, max_x = self.win.getmaxyx()
+                self.win.box()
+
+                title = " Dispositivos externos conectados (MountPoints2) "
+                self.win.addstr(0, max(2, (max_x - len(title)) // 2), title, curses.A_BOLD)
+                footer = " ↑/↓: Navegar  ENTER: Detalle  ESC/q: Salir "
+                self.win.addstr(max_y - 1, max(2, (max_x - len(footer)) // 2), footer, curses.A_BOLD)
+
+                # Tabla completa -> separar header (líneas 0-1) y datos (desde 2)
+                table = format_mountpoints2_table(vis_rows, screen_width=max_x - 4)
+                lines = table.split("\n")
+                header_lines = lines[:2] if len(lines) >= 2 else lines
+                data_lines   = lines[2:]  if len(lines) >  2 else []
+
+                data_height = max(0, max_y - 4)       # quita borde sup, header, sep y footer
+                data_count  = len(vis_rows)
+
+                # Clamp selección + scroll
+                if data_count == 0:
+                    selected = 0
+                    data_scroll = 0
+                else:
+                    selected = max(0, min(selected, data_count - 1))
+                    if selected < data_scroll:
+                        data_scroll = selected
+                    elif selected >= data_scroll + data_height:
+                        data_scroll = selected - data_height + 1
+                    max_scroll = max(0, data_count - data_height)
+                    data_scroll = max(0, min(data_scroll, max_scroll))
+
+                # Header fijo
+                if header_lines:
+                    self.win.addstr(1, 2, header_lines[0][:max_x - 4], curses.A_BOLD)
+                if len(header_lines) > 1:
+                    self.win.addstr(2, 2, header_lines[1][:max_x - 4])
+
+                # Datos visibles
+                visible_data = data_lines[data_scroll:data_scroll + data_height]
+                for i, line in enumerate(visible_data):
+                    y = 3 + i
+                    abs_idx = data_scroll + i
+                    attr = curses.A_REVERSE if abs_idx == selected else curses.A_NORMAL
+                    self.win.addstr(y, 2, line[:max_x - 4], attr)
+
+                self.win.refresh()
+                key = self.win.getch()
+
+                if key == curses.KEY_UP and data_count:
+                    selected = (selected - 1) % data_count
+                elif key == curses.KEY_DOWN and data_count:
+                    selected = (selected + 1) % data_count
+                elif key in (10, 13):  # ENTER
+                    if data_count:
+                        key_name, label, destino = vis_rows[selected]
+                        import textwrap
+                        w = max_x - 4
+                        detalle = (
+                            f"Clave:\n{textwrap.fill(str(key_name), w)}\n\n"
+                            f"Etiqueta:\n{textwrap.fill(str(label), w)}\n\n"
+                            f"Identificador / Ruta (resuelto):\n{textwrap.fill(str(destino), w)}"
+                        )
+                        show_scrollable_popup(self.win, detalle, "Detalle dispositivo")
+                elif key in (27, ord("q")):
+                    self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
+                    return
+
         
         elif index == 4:  # Muicache
             selected = 0
@@ -985,6 +1401,81 @@ class UserntDataViewer(Renderizable):
                 elif key in (27, ord("q")):
                     self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
                     return
+        
+
+        elif index == 7:  # TrayNotify: ejecutables
+            selected = 0
+            scroll_offset = 0
+            self.layout.change_footer("")
+
+            # Reconsultamos ordenado por timestamp DESC para mejor lectura
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT user, source, exe_name, extension_type, suspicious, key_path, timestamp "
+                "FROM traynotify_executables WHERE user=? ORDER BY timestamp DESC",
+                (username,)
+            )
+            rows = cursor.fetchall()
+            conn.close()
+
+            while True:
+                self.win.clear()
+                max_y, max_x = self.win.getmaxyx()
+                self.win.box()
+
+                title = " TrayNotify: ejecutables e información del systray "
+                self.win.addstr(0, max(2, (max_x - len(title)) // 2), title, curses.A_BOLD)
+
+                footer = " ↑/↓: Navegar  ENTER: Detalle  ESC/q: Salir "
+                self.win.addstr(max_y - 1, max(2, (max_x - len(footer)) // 2), footer, curses.A_BOLD)
+
+                tabla = format_traynotify_exec_table(rows, screen_width=max_x - 4, selected_index=selected)
+                lineas = tabla.split("\n")
+
+                header_lines = 2
+                visible_height = max_y - 2
+                total_lines = len(lineas)
+
+                if rows:
+                    selected = max(0, min(selected, len(rows) - 1))
+                else:
+                    selected = 0
+
+                selected_line = selected + header_lines
+                if selected_line < scroll_offset + header_lines:
+                    scroll_offset = selected_line - header_lines
+                elif selected_line >= scroll_offset + visible_height:
+                    scroll_offset = selected_line - visible_height + 1
+
+                max_scroll = max(0, total_lines - visible_height)
+                scroll_offset = max(0, min(scroll_offset, max_scroll))
+
+                visibles = lineas[scroll_offset:scroll_offset + visible_height]
+                for i, line in enumerate(visibles):
+                    y = i + 1
+                    abs_line = scroll_offset + i
+                    if abs_line >= header_lines:
+                        data_idx = abs_line - header_lines
+                        attr = curses.A_REVERSE if data_idx == selected else curses.A_NORMAL
+                    else:
+                        attr = curses.A_BOLD if abs_line == 0 else curses.A_NORMAL
+                    self.win.addstr(y, 2, line[:max_x - 4], attr)
+
+                self.win.refresh()
+                key = self.win.getch()
+                if key == curses.KEY_UP and rows:
+                    selected = (selected - 1) % len(rows)
+                elif key == curses.KEY_DOWN and rows:
+                    selected = (selected + 1) % len(rows)
+                elif key in (10, 13):  # ENTER
+                    if rows:
+                        format_traynotify_exec_table(rows, screen_width=max_x - 4,
+                                                     selected_index=selected, show_popup=True, win=self.win)
+                elif key in (27, ord("q")):
+                    self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver resumen de usuario, e: Exportar informacion del usuario")
+                    return
+        
         elif index == 8:  # TrayNotify metadata
             selected = 0
             scroll_offset = 0

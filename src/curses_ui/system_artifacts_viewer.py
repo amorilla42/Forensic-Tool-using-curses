@@ -270,6 +270,53 @@ def fmt_partitions(rows, width):
     return "\n".join(out)
 
 
+
+def _yesno(v):
+    try:
+        return "Sí" if int(v) == 1 else "No"
+    except Exception:
+        return "Sí" if str(v).strip().lower() in ("1", "true", "yes") else "No"
+
+
+def fmt_run_mru(rows, width):
+    # order_key, command, username
+    w1 = 10                 # Orden (clave: a, b, c…)
+    w3 = 18                 # Usuario
+    w2 = width - (w1 + w3 + 7)  # Comando
+    out = []
+    head = f"{'Orden':<{w1}}│ {'Comando':<{w2}}│ {'Usuario':<{w3}}"
+    out.append(head); out.append("─"*len(head))
+    if not rows:
+        out.append("Sin datos")
+        return "\n".join(out)
+    for order_key, command, username in rows:
+        out.append(
+            f"{_recortar(order_key,w1):<{w1}}│ {_recortar(command,w2):<{w2}}│ {_recortar(username,w3):<{w3}}"
+        )
+    return "\n".join(out)
+
+def fmt_traynotify_exec(rows, width):
+    # source, exe_name, extension_type, suspicious, timestamp, key_path, user
+    w1 = int(width * 0.16)      # Origen (IconStreams / PastIconsStream)
+    w2 = int(width * 0.46)      # Ejecutable (ruta)
+    w3 = 8                      # Ext
+    w4 = 11                     # Sospechoso
+    w5 = width - (w1 + w2 + w3 + w4 + 7)  # Timestamp
+    out = []
+    head = f"{'Origen':<{w1}}│ {'Ejecutable':<{w2}}│ {'Ext':<{w3}}│ {'Sospechoso':^{w4}} │ {'Timestamp':<{w5}}"
+    out.append(head); out.append("─"*len(head))
+    if not rows:
+        out.append("Sin datos")
+        return "\n".join(out)
+    for source, exe, ext, susp, ts, _key_path, _user in rows:
+        out.append(
+            f"{_recortar(source,w1):<{w1}}│ {_recortar(exe,w2):<{w2}}│ {_recortar(ext,w3):<{w3}}│ "
+            f"{_yesno(susp):^{w4}} │ {_recortar(ts,w5):<{w5}}"
+        )
+    return "\n".join(out)
+
+
+
 class SystemArtifactsViewer(Renderizable):
     def __init__(self, win, db_path, layout):
         self.win = win
@@ -289,7 +336,9 @@ class SystemArtifactsViewer(Renderizable):
             "Servicios",
             "Dispositivos USB",
             "Perfiles de energía",
-            "Particiones (disco)"
+            "Particiones (disco)",
+            "Run (MRU)", 
+            "Bandeja del sistema (TrayNotify)"
         ]
         self.selected = 0
 
@@ -481,6 +530,41 @@ class SystemArtifactsViewer(Renderizable):
                 headers=None,                 # usamos detalle personalizado
                 custom_detail_fn=_partition_detail
             )
+        elif idx == 12:
+            # RUN MRU
+            rows = _fetch_all(
+                self.db_path,
+                "SELECT order_key, command, username FROM run_mru ORDER BY order_key"
+            )
+            self._interactive_table(
+                "NTUSER: Run (MRU)",
+                rows,
+                lambda r: fmt_run_mru(r, width),
+                headers=["Orden (clave)", "Comando", "Usuario"]
+            )
+            return
+
+        elif idx == 13:
+            # TrayNotify ejecutables (con detalle que muestra key_path y usuario)
+            rows = _fetch_all(
+                self.db_path,
+                "SELECT source, exe_name, extension_type, suspicious, timestamp, key_path, user "
+                "FROM traynotify_executables "
+                "ORDER BY timestamp DESC"
+            )
+
+            # detalle completo con key_path y usuario
+            headers_tray = ["Origen", "Ejecutable", "Extensión", "Sospechoso", "Timestamp", "Key path", "Usuario"]
+            transforms_tray = {3: _yesno}
+
+            self._interactive_table(
+                "NTUSER: Bandeja del sistema (TrayNotify)",
+                rows,
+                lambda r: fmt_traynotify_exec(r, width),
+                headers=headers_tray,
+                transforms=transforms_tray
+            )
+            return
 
 
     def _interactive_table(self, title, full_rows, formatter, headers=None, transforms=None, custom_detail_fn=None):

@@ -48,14 +48,16 @@ QUE SE CALCULE EL HASH256 DEL .E01 Y EL MD5 Y QUE SE MUESTRE EN EL MENU DEL F1
 
 
 
+TABLAS NO USADAS/RELLENADAS:
+        run_mru (no hay datos de win+R en la muestra)(rellenar datos mockup)
+        traynotify_executables (rellenar con datos mockup)
+
+
+
+
+
 -------------------------------------POR HACER------------------------------------
-
-
 
 ya se extrae hashes de mail en archivos interesantes, mostrarlo de alguna forma
 
 NUEVA VENTANA DE AYUDA COMPLETAR CON COSAS NUEVAS/REVISAR
-
-TABLAS NO USADAS/RELLENADAS:
-        run_mru (no hay datos de win+R en la muestra)(rellenar datos mockup)
-        traynotify_executables (rellenar con datos mockup)
