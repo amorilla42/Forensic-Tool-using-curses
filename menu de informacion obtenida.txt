@@ -48,9 +48,7 @@ Informacion de usuarios locales del sistema
 
 -------------------------------------POR HACER------------------------------------
 
-INTEGRACION DE VIRUSTOTAL
-
-vista de informacion del sistema donde muestre toda la info importante en un menu F4??
+INTEGRACION DE VIRUSTOTAL en archivos interesantes??? y en busqueda tambien
 
 arreglar extraccion de registros que fallan al crear un caso nuevo
 
@@ -61,3 +59,9 @@ NUEVA VENTANA DE AYUDA COMPLETAR CON COSAS NUEVAS/REVISAR
 QUE SE CALCULE EL HASH256 DEL .E01 Y EL MD5 Y QUE SE MUESTRE EN EL MENU DEL F1
 
 MOSTRAR HASH DE LOS ARCHIVOS CUANDO LE DAS A VER INFO DEL ARCHIVO PORDENTRO Y SALEN LOS METADATOS A LA IZQUIERDA
+
+TABLAS NO USADAS/RELLENADAS:
+        run_mru
+        run_once_entries
+        traynotify_executables
+        partition_info

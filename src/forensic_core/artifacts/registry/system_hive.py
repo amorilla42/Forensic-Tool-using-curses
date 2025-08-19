@@ -7,6 +7,70 @@ from curses_ui.awesome_layout import AwesomeLayout
 
 def extraer_system(db_path, hive_path):
 
+# ---- funciones de normalización y sospecha de servicios ----
+    def _norm(p):
+        if not p:
+            return ""
+        s = str(p).strip().strip('"').replace("/", "\\").lower()
+        if s.startswith("\\??\\") or s.startswith("\\\\?\\"):
+            s = s[4:]
+        s = s.replace("%systemroot%", "\\windows")
+        s = s.replace("\\systemroot\\", "\\windows\\")
+        s = s.replace("%windir%", "\\windows")
+        s = s.replace("%systemdrive%", "c:")
+        while "\\\\" in s:
+            s = s.replace("\\\\", "\\")
+        return s
+
+    def _extract_exe(img):
+        if not img:
+            return ""
+        s = str(img).strip()
+        if s.startswith('"'):
+            j = s.find('"', 1)
+            exe = s[1:j] if j > 1 else s.strip('"')
+        else:
+            exe = s.split()[0]
+        return _norm(exe)
+
+    def _is_interpreter_path(snorm):
+        names = ["\\cmd.exe","\\powershell.exe","\\wscript.exe","\\cscript.exe",
+                "\\rundll32.exe","\\mshta.exe","\\regsvr32.exe"]
+        return any(n in snorm for n in names)
+
+    def _is_kernel_or_fs(stype):
+        try:
+            v = int(stype)
+        except Exception:
+            return False
+        return bool(v & 0x00000001) or bool(v & 0x00000002)  # Kernel / FS
+
+    def _suspicious_reason(image_exe_norm, service_type, servicedll_norm):
+        # 1) Ejecutable
+        if image_exe_norm:
+            if image_exe_norm.startswith("\\\\"):
+                return "Ruta UNC (red) en ImagePath"
+            bad_dirs = ["\\users\\","\\appdata\\","\\local settings\\","\\temp\\","\\tmp\\","\\programdata\\"]
+            if any(b in image_exe_norm for b in bad_dirs):
+                return "ImagePath en ubicaciones de usuario/AppData/Temp/ProgramData"
+            if _is_interpreter_path(image_exe_norm):
+                return "ImagePath usa intérprete/lanzador (cmd/powershell/wscript/…)"
+            if _is_kernel_or_fs(service_type) and "system32\\drivers\\" not in image_exe_norm:
+                return "Driver fuera de system32\\drivers\\"
+
+        # 2) ServiceDll
+        if servicedll_norm:
+            if servicedll_norm.startswith("\\\\"):
+                return "ServiceDll con ruta UNC (red)"
+            bad_dirs = ["\\users\\","\\appdata\\","\\local settings\\","\\temp\\","\\tmp\\","\\programdata\\"]
+            if any(b in servicedll_norm for b in bad_dirs):
+                return "ServiceDll en ubicaciones de usuario/AppData/Temp/ProgramData"
+
+        return None
+# ---- fin funciones de normalización y sospecha de servicios ----
+
+
+
     def get_value_safe(key, val_name):
         try:
             val = key.value(val_name)
@@ -23,7 +87,6 @@ def extraer_system(db_path, hive_path):
     def filetime_bin_to_dt(bin_val):
         import struct
         if isinstance(bin_val, bytes) and len(bin_val) == 8:
-            # unpack little endian unsigned long long
             ft, = struct.unpack('<Q', bin_val)
             # convertir FILETIME a timestamp unix
             us = (ft - 116444736000000000) / 10_000_000
@@ -71,20 +134,6 @@ def extraer_system(db_path, hive_path):
             last_boot_time = filetime_bin_to_dt(shutdown_val)
         except Exception:
             last_boot_time = None
-
-        # Servicios y drivers (HKLM\SYSTEM\ControlSet00X\Services)
-        servicios = []
-        try:
-            services_key = reg.open(f"{current_control_set}\\Services")
-            for service in services_key.subkeys():
-                name = service.name()
-                start_type = get_value_safe(service, "Start")
-                image_path = get_value_safe(service, "ImagePath")
-                display_name = get_value_safe(service, "DisplayName")
-                service_type = get_value_safe(service, "Type")
-                servicios.append((name, start_type, service_type, image_path, display_name))
-        except Exception:
-            pass
 
         # Dispositivos Plug and Play (HKLM\SYSTEM\ControlSet00X\Enum\USB)
         dispositivos_usb = []
@@ -140,9 +189,19 @@ def extraer_system(db_path, hive_path):
                 service_type INTEGER,
                 image_path TEXT,
                 display_name TEXT,
+                image_exe_path TEXT,         -- ejecutable sin argumentos
+                normalized_image_path TEXT,  -- ejecutable normalizado (minúsculas, variables env resueltas, etc.)
+                servicedll TEXT,             -- Parameters\ServiceDll si existe
+                object_name TEXT,            -- cuenta con la que corre el servicio
+                description TEXT,            -- descripción del servicio
+                is_svchost INTEGER,          -- 1 si image_exe_path termina en \svchost.exe
+                suspicious INTEGER,          -- 1 si marcamos sospechoso
+                suspicious_reason TEXT,      -- motivo de sospecha
+
                 FOREIGN KEY(entry_id) REFERENCES filesystem_entry(entry_id)
             );
         """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS usb_devices (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,7 +224,6 @@ def extraer_system(db_path, hive_path):
         """)
 
         # Limpiar tablas antes de insertar nuevos datos
-        # Eliminar registros antiguos si se quiere reextraer
         cursor.execute("DELETE FROM system_info WHERE entry_id = ?", (entry_id,))
         cursor.execute("DELETE FROM system_services WHERE entry_id = ?", (entry_id,))
         cursor.execute("DELETE FROM usb_devices WHERE entry_id = ?", (entry_id,))
@@ -175,11 +233,52 @@ def extraer_system(db_path, hive_path):
 
         # Insertar datos
         cursor.execute("INSERT INTO system_info (entry_id, last_boot_time) VALUES (?, ?);", (entry_id, last_boot_time))
-        for s in servicios:
-            cursor.execute(
-                "INSERT INTO system_services (entry_id, service_name, start_type, service_type, image_path, display_name) VALUES (?, ?, ?, ?, ?, ?);",
-                (entry_id, s[0], s[1], s[2], s[3], s[4])
-            )
+        
+        try:
+            services_key = reg.open(f"{current_control_set}\\Services")
+            for service in services_key.subkeys():
+                name         = service.name()
+                start_type   = get_value_safe(service, "Start")
+                service_type = get_value_safe(service, "Type")
+                image_path   = get_value_safe(service, "ImagePath")
+                display_name = get_value_safe(service, "DisplayName")
+                object_name  = get_value_safe(service, "ObjectName")
+                description  = get_value_safe(service, "Description")
+
+                # Parameters\ServiceDll (si existe)
+                try:
+                    params = service.subkey("Parameters")
+                    servicedll = get_value_safe(params, "ServiceDll")
+                except Exception:
+                    servicedll = None
+
+                # Normalizaciones y flags
+                image_exe  = _extract_exe(image_path)
+                image_norm = _norm(image_exe)
+                dll_norm   = _norm(servicedll) if servicedll else None
+                is_svchost = 1 if image_norm.endswith("\\svchost.exe") else 0
+
+                reason     = _suspicious_reason(image_norm, service_type, dll_norm)
+                suspicious = 1 if reason else 0
+
+                cursor.execute("""
+                    INSERT INTO system_services
+                        (entry_id, service_name, start_type, service_type, image_path, display_name,
+                        image_exe_path, normalized_image_path, servicedll, object_name, description,
+                        is_svchost, suspicious, suspicious_reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    entry_id, name, start_type, service_type, image_path, display_name,
+                    image_exe, image_norm, servicedll, object_name, description,
+                    is_svchost, suspicious, reason
+                ))
+        except Registry.RegistryKeyNotFoundException:
+            pass
+        except Exception as e:
+            print(f"[!] Error extrayendo Servicios: {e}")
+
+
+
         for d in dispositivos_usb:
             cursor.execute(
                 "INSERT INTO usb_devices (entry_id, device_class, device_id, friendly_name, device_desc) VALUES (?, ?, ?, ?, ?);",

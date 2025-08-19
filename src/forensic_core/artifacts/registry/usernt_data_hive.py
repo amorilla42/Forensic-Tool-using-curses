@@ -320,7 +320,7 @@ def extraer_ntuser_artefactos(ntuser_path, db_path):
 
     conn.commit()
     conn.close()
-    print(f"[+] Extracción completada para {username}")
+
 
 def visualizar_resumen_usuarios(db_path, dir_exportar):
 

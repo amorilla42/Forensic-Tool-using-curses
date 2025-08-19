@@ -224,7 +224,7 @@ def fmt_power_schemes(rows, width):
         out.append(f"{_recortar(s,w1):<{w1}}│ {_recortar(f,w2):<{w2}}")
     return "\n".join(out)
 
-# ---------- main viewer ----------
+
 class SystemArtifactsViewer(Renderizable):
     def __init__(self, win, db_path, layout):
         self.win = win
@@ -340,7 +340,6 @@ class SystemArtifactsViewer(Renderizable):
 
         elif idx == 7:
             rows = _fetch_all(self.db_path, "SELECT group_name, services FROM svchost_groups ORDER BY group_name")
-            # opcional: detalle personalizado para listar cada servicio en línea aparte
             def _svchost_detail(row, w):
                 grupo, servicios = row
                 lst = []
@@ -395,13 +394,6 @@ class SystemArtifactsViewer(Renderizable):
             )
 
     def _interactive_table(self, title, full_rows, formatter, headers=None, transforms=None, custom_detail_fn=None):
-        """
-        Muestra la tabla con scroll y permite ver detalle (ENTER).
-        El detalle usa los 'full_rows' y no el texto recortado.
-        - headers: lista de etiquetas para detalle.
-        - transforms: dict {idx: fn} para humanizar campos concretos.
-        - custom_detail_fn: callable(row, width) -> str para detalle a medida.
-        """
         self.layout.change_footer(" ↑/↓: Navegar  ENTER: Detalle  q/ESC: Volver ")
         selected = 0
         scroll = 0
@@ -412,62 +404,69 @@ class SystemArtifactsViewer(Renderizable):
             max_y, max_x = self.win.getmaxyx()
             width = max_x - 4
 
+
             self.win.addstr(0, max(2, (max_x - len(f" {title} ")) // 2), f" {title} ", curses.A_BOLD)
+
             table = formatter(full_rows)
             lines = table.split("\n")
-
             header_lines = 2
-            vis_h = max_y - 2
-            total = len(lines)
 
-            data_count = max(0, total - header_lines)
+
+            if len(lines) >= 1:
+                self.win.addstr(1, 2, lines[0][:max_x-4], curses.A_BOLD)
+            if len(lines) >= 2:
+                self.win.addstr(2, 2, lines[1][:max_x-4], curses.A_NORMAL)
+
+
+            data_lines = lines[header_lines:]
+
+            # Calcular scroll y visibilidad (las dos primeras líneas son el encabezado)
+            vis_h = max(1, (max_y - 2) - header_lines)
+
+            data_count = len(data_lines)
             if data_count == 0:
                 selected = 0
             else:
                 selected = max(0, min(selected, data_count - 1))
 
-            sel_line = selected + header_lines
-            if sel_line < scroll + header_lines:
-                scroll = sel_line - header_lines
-            elif sel_line >= scroll + vis_h:
-                scroll = sel_line - vis_h + 1
 
-            max_scroll = max(0, total - vis_h)
-            scroll = max(0, min(scroll, max_scroll))
+            if selected < scroll:
+                scroll = selected
+            elif selected >= scroll + vis_h:
+                scroll = selected - vis_h + 1
+            scroll = max(0, min(scroll, max(0, data_count - vis_h)))
 
-            visibles = lines[scroll:scroll + vis_h]
-            for i, line in enumerate(visibles):
-                y = i + 1
-                abs_line = scroll + i
-                if abs_line >= header_lines:
-                    data_idx = abs_line - header_lines
-                    attr = curses.A_REVERSE if data_idx == selected else curses.A_NORMAL
-                else:
-                    attr = curses.A_BOLD if abs_line == 0 else curses.A_NORMAL
+            # Pintar datos comenzando en y=3
+            for i, line in enumerate(data_lines[scroll:scroll + vis_h]):
+                y = 3 + i
+                attr = curses.A_REVERSE if (scroll + i) == selected else curses.A_NORMAL
                 self.win.addstr(y, 2, line[:max_x - 4], attr)
 
             self.win.refresh()
             k = self.win.getch()
+
             if k == curses.KEY_UP and data_count:
                 selected = (selected - 1) % data_count
             elif k == curses.KEY_DOWN and data_count:
                 selected = (selected + 1) % data_count
             elif k in (10, 13):
                 if data_count:
-                    row = full_rows[selected]  # <-- ¡fila original completa!
+                    row = full_rows[selected]
                     if custom_detail_fn:
                         detail = custom_detail_fn(row, max(20, width))
                     elif headers:
                         detail = _detail_from_row(headers, row, max(20, width), transforms=transforms)
                     else:
-                        # fallback: volcar la tupla
                         detail = _wrap(" | ".join("" if v is None else str(v) for v in row), max(20, width))
                     _show_scrollable_popup(self.win, detail, title=f"Detalle: {title}")
             elif k in (27, ord('q')):
                 self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver archivos")
                 break
+
+
+
     def _readline(self, prompt="Filtro: "):
-        """Pequeño prompt inline para leer una cadena."""
+
         max_y, max_x = self.win.getmaxyx()
         curses.curs_set(1)
         try:
@@ -494,330 +493,250 @@ class SystemArtifactsViewer(Renderizable):
             curses.curs_set(0)
 
     def _services_browser(self):
-        # Carga filas originales (sin recortes)
         rows_all = _fetch_all(
             self.db_path,
-            "SELECT service_name, display_name, image_path, start_type, service_type "
-            "FROM system_services ORDER BY service_name"
+            "SELECT "
+            " service_name, display_name, image_path, start_type, service_type, "
+            " image_exe_path, normalized_image_path, servicedll, object_name, description, "
+            " is_svchost, suspicious, suspicious_reason "
+            "FROM system_services "
+            "ORDER BY service_name"
         )
 
-        # Estado de filtros
+        # índices legibles de las columnas
+
+        SNAME, DNAME, IMG, START, STYPE, IMG_EXE, IMG_NORM, SRVDLL, OBJ, DESC, IS_SVCHOST, SUSP, REASON = range(13)
+
+        # ---- filtros ----
         query = ""
-        start_filters = set()  # valores texto: {"Boot","System","Auto","Manual","Disabled"}
-        type_filters = set()   # {"kernel","fs","win32"} (fs lo tratamos dentro de 'kernel' por simplicidad visual)
+        start_filters = set()     # {"Boot","System","Auto","Manual","Disabled"}
+        type_filters = set()      # {"kernel","win32"}
         only_with_path = False
         only_svchost = False
         hide_svchost = False
-        suspicious_only = False
-        sort_mode = 0  # 0=nombre, 1=start+nombre, 2=ruta
+        suspicious_only = False   
+        sort_mode = 0             # 0=nombre, 1=start+nombre, 2=ruta
 
         selected = 0
         scroll = 0
 
-        def start_label(v):
-            return _human_start_type(v)
+        def start_label(v): return _human_start_type(v)
+        def type_label(v):  return _human_service_type(v)
+        def is_svchost(img): return isinstance(img, str) and "svchost.exe" in img.lower()
 
-        def type_label(v):
-            t = _human_service_type(v)
-            return t
-
-        def is_svchost(p):
-            return isinstance(p, str) and "svchost.exe" in p.lower()
-
-        def _norm(p):
-            if not p:
-                return ""
-            s = str(p).strip().strip('"').replace("/", "\\").lower()
-
-            # Quitar prefijos de namespace NT
-            if s.startswith("\\??\\") or s.startswith("\\\\?\\"):
-                s = s[4:]
-
-            # Normalizaciones típicas
-            s = s.replace("%systemroot%", "\\windows")
-            s = s.replace("\\systemroot\\", "\\windows\\")
-            s = s.replace("%windir%", "\\windows")
-            s = s.replace("%systemdrive%", "c:")
-
-            # Compactar dobles backslashes
-            while "\\\\" in s:
-                s = s.replace("\\\\", "\\")
-
-            return s
-
-
-        def _extract_exe(img):
-            """Devuelve solo la ruta del ejecutable (sin args) normalizada."""
-            if not img:
-                return ""
-            s = str(img).strip()
-            if s.startswith('"'):
-                j = s.find('"', 1)
-                exe = s[1:j] if j > 1 else s.strip('"')
-            else:
-                exe = s.split()[0]
-            return _norm(exe)
-
-        def _is_interpreter_path(s):
-            names = [
-                "\\cmd.exe", "\\powershell.exe", "\\wscript.exe", "\\cscript.exe",
-                "\\rundll32.exe", "\\mshta.exe", "\\regsvr32.exe"
-            ]
-            return any(n in s for n in names)
-
-        def _is_kernel_or_fs(stype):
-            try:
-                v = int(stype)
-            except Exception:
-                return False
-            return bool(v & 0x00000001) or bool(v & 0x00000002)  # Kernel / FS
-
-        def suspicious_reason(row):
-            """
-            Devuelve una cadena con la razón de sospecha o None si no es sospechoso.
-            row = (service_name, display_name, image_path, start_type, service_type)
-            """
-            _, _, img, _, stype = row
-            exe = _extract_exe(img)
-            if not exe:
-                return None
-
-            bad_dirs = ["\\users\\", "\\appdata\\", "\\local settings\\", "\\temp\\", "\\tmp\\", "\\programdata\\"]
-            if any(b in exe for b in bad_dirs):
-                return "Ubicación de usuario/AppData/Temp/ProgramData"
-
-            if exe.startswith("\\\\"):
-                return "Ruta UNC (red)"
-
-            if _is_interpreter_path(exe):
-                return "Usa intérprete/lanzador (cmd/powershell/wscript/etc.)"
-
-            if _is_kernel_or_fs(stype) and "system32\\drivers\\" not in exe:
-                return "Driver fuera de system32\\drivers\\"
-
-
-            return None
-
-        def is_suspicious_service_row(row):
-            return suspicious_reason(row) is not None
-
-
-        # Ordenación estable
         start_order = {"Boot": 0, "System": 1, "Auto": 2, "Manual": 3, "Disabled": 4}
 
+        def _yesno(v):
+            try:
+                return "Sí" if int(v) == 1 else "No"
+            except Exception:
+                return "Sí" if str(v).lower() in ("true", "1") else "No"
+
         def apply_filters():
-            # filtra
             res = []
             q = query.lower().strip()
             for r in rows_all:
-                sname, dname, img, st, stype = r
-                s_lbl = start_label(st) or ""
-                t_lbl = (type_label(stype) or "").lower()
+                s_lbl = start_label(r[START]) or ""
+                t_lbl = (type_label(r[STYPE]) or "").lower()
 
                 # texto
                 if q:
                     hay = False
-                    for field in (sname, dname, img):
+                    for field in (r[SNAME], r[DNAME], r[IMG], r[IMG_EXE], r[IMG_NORM], r[SRVDLL]):
                         if field and q in str(field).lower():
-                            hay = True
-                            break
+                            hay = True; break
                     if not hay:
                         continue
 
-                # filtros start
-                if start_filters:
-                    if (s_lbl or "") not in start_filters:
-                        continue
+                # start type
+                if start_filters and (s_lbl or "") not in start_filters:
+                    continue
 
-                # filtros tipo
+                # tipo (agrupado en kernel/FS o win32)
                 if type_filters:
-                    tl = t_lbl
                     want = []
                     if "kernel" in type_filters:
-                        want.append("kernel driver")
-                        want.append("fs driver")
+                        want += ["kernel driver", "fs driver"]
                     if "win32" in type_filters:
-                        want.append("win32 own proc")
-                        want.append("win32 shared proc")
-                    if not any(w in tl for w in want):
+                        want += ["win32 own proc", "win32 shared proc"]
+                    if not any(w in t_lbl for w in want):
                         continue
 
-                # solo con ruta
-                if only_with_path and (not img or not str(img).strip()):
+                # mostrar solo con ruta distinta de None o vacía
+                if only_with_path and not (r[IMG] and str(r[IMG]).strip()):
                     continue
 
-                # svchost solo / ocultar
-                if only_svchost and not is_svchost(img):
+                # svchost
+                if only_svchost and not is_svchost(r[IMG]):
                     continue
-                if hide_svchost and is_svchost(img):
+                if hide_svchost and is_svchost(r[IMG]):
                     continue
 
-                # sospechosos
-                if suspicious_only and not is_suspicious_service_row(r):
-                    continue
+
+                if suspicious_only:
+                    try:
+                        if int(r[SUSP]) != 1:
+                            continue
+                    except Exception:
+
+                        continue
 
                 res.append(r)
 
-            # ordenar
+            # ordenación
             if sort_mode == 0:
-                res.sort(key=lambda r: (str(r[0] or "").lower(), str(r[1] or "").lower()))
+                res.sort(key=lambda r: (str(r[SNAME] or "").lower(), str(r[DNAME] or "").lower()))
             elif sort_mode == 1:
-                res.sort(key=lambda r: (start_order.get(start_label(r[3]) or "Manual", 99),
-                                        str(r[0] or "").lower()))
+                res.sort(key=lambda r: (start_order.get(start_label(r[START]) or "Manual", 99),
+                                        str(r[SNAME] or "").lower()))
             else:
-                res.sort(key=lambda r: (str(r[2] or "").lower(), str(r[0] or "").lower()))
+                res.sort(key=lambda r: (str(r[IMG] or "").lower(), str(r[SNAME] or "").lower()))
             return res
 
+        # ---- badge de filtros (se muestran en la parte superior) ----
         def filters_badge(max_w):
             parts = []
-            if query:
-                parts.append(f"q='{query}'")
-            if start_filters:
-                parts.append("start=" + ",".join(sorted(start_filters, key=lambda x: start_order.get(x, 99))))
-            if type_filters:
-                parts.append("type=" + ",".join(sorted(type_filters)))
-            if only_with_path:
-                parts.append("path=solo")
-            if only_svchost:
-                parts.append("svchost=solo")
-            if hide_svchost:
-                parts.append("svchost=ocultar")
-            if suspicious_only:
-                parts.append("suspicious=on")
-            sm = {0:"sort=nombre", 1:"sort=start", 2:"sort=ruta"}[sort_mode]
-            parts.append(sm)
-            s = " | ".join(parts) if parts else "sin filtros"
-            return s[:max_w]
+            if query: parts.append(f"q='{query}'")
+            if start_filters: parts.append("start=" + ",".join(sorted(start_filters, key=lambda x: start_order.get(x, 99))))
+            if type_filters: parts.append("type=" + ",".join(sorted(type_filters)))
+            if only_with_path: parts.append("path=solo")
+            if only_svchost: parts.append("svchost=solo")
+            if hide_svchost: parts.append("svchost=ocultar")
+            if suspicious_only: parts.append("suspicious=on")  # <- ahora viene de BD
+            parts.append({0:"sort=nombre", 1:"sort=start", 2:"sort=ruta"}[sort_mode])
+            return " | ".join(parts)[:max_w]
 
-        headers = ["Servicio", "Nombre", "Imagen", "Inicio", "Tipo"]
-        transforms = {3: _human_start_type, 4: _human_service_type}
+        # cabeceras para el DETALLE (ENTER) usando columnas extendidas
+        headers_detail = [
+            "Servicio", "Nombre", "Imagen", "Inicio", "Tipo",
+            "Ejecutable", "Ruta normalizada", "ServiceDll",
+            "Cuenta (ObjectName)", "Descripción",
+            "svchost", "Sospechoso", "Motivo"
+        ]
+        transforms_detail = {
+            START: _human_start_type,
+            STYPE: _human_service_type,
+            IS_SVCHOST: _yesno,
+            SUSP: _yesno
+        }
 
         self.layout.change_footer(
-            " f:buscar  a/m/d/y/b:Start  x:limpiar Start  k/w:t.TIPO  t:limpiar Tipo  "
-            "p:solo ruta  v:solo svchost  V:ocultar svchost  u:sospechosos  o:orden  c:limpiar q  r:reset  ENTER:detalle  q/ESC:salir "
+            "f:Buscar| c:Limpiar buscar| a/m/d/y/b:Start| x:Limpiar Start| k/w:Tipo| t:limpiar Tipo| "
+            "p:Ruta| v/V:svchost| u:sospechosos| o:orden| r:reset| ENTER:detalle| q/ESC:salir"
         )
 
         while True:
             filtered = apply_filters()
-            # mantener selección en rango
-            if filtered:
-                selected = max(0, min(selected, len(filtered)-1))
-            else:
-                selected = 0
+            selected = max(0, min(selected, len(filtered)-1)) if filtered else 0
 
-            self.win.clear()
-            self.win.box()
+            self.win.clear(); self.win.box()
             max_y, max_x = self.win.getmaxyx()
             width = max_x - 4
 
-            # título
+            
             title = " SYSTEM: Servicios "
             self.win.addstr(0, max(2, (max_x - len(title)) // 2), title, curses.A_BOLD)
 
-            # línea de filtros (estado)
+            # línea de filtros (estado) fija en y=1
             status = filters_badge(max_x - 4)
             self.win.addstr(1, 2, status, curses.A_DIM)
 
-            # render de tabla
-            # usamos el formatter existente, pero pintamos desde y=2 para dejar la línea de estado
+            # Construir tabla 
             table = fmt_system_services(
-                [(r[0], r[1], r[2], r[3], r[4]) for r in filtered],
+                [(r[SNAME], r[DNAME], r[IMG], r[START], r[STYPE]) for r in filtered],
                 width
             )
             lines = table.split("\n")
+            header_lines = 2  # cabecera + separador
 
-            header_lines = 2
-            vis_h = max_y - 3  # una línea extra usada por el status
-            total = len(lines)
+            # --- cabecera FIJA de la tabla en y=2 y y=3 ---
+            if len(lines) >= 1:
+                self.win.addstr(2, 2, lines[0][:max_x-4], curses.A_BOLD)
+            if len(lines) >= 2:
+                self.win.addstr(3, 2, lines[1][:max_x-4], curses.A_NORMAL)
 
-            data_count = max(0, total - header_lines)
-            sel_line = selected + header_lines
+            # Solo datos a partir de aquí
+            data_lines = lines[header_lines:]
 
-            # scroll con la nueva altura visible
-            if sel_line < scroll + header_lines:
-                scroll = sel_line - header_lines
-            elif sel_line >= scroll + vis_h:
-                scroll = sel_line - vis_h + 1
-            scroll = max(0, min(scroll, max(0, total - vis_h)))
+            # Altura visible: interior (max_y-2) menos (1 línea status + 2 cabeceras) => max_y - 5
+            vis_h = max(1, (max_y - 2) - (1 + header_lines))
 
-            visibles = lines[scroll:scroll + vis_h]
-            for i, line in enumerate(visibles):
-                y = i + 2  # +2 por título y status
-                abs_line = scroll + i
-                if abs_line >= header_lines:
-                    data_idx = abs_line - header_lines
-                    attr = curses.A_REVERSE if data_idx == selected else curses.A_NORMAL
-                else:
-                    attr = curses.A_BOLD if abs_line == 0 else curses.A_NORMAL
+            data_count = len(data_lines)
+            selected = max(0, min(selected, data_count - 1)) if data_count else 0
+
+            # scroll solo de datos NO LA CABECERA
+            if selected < scroll:
+                scroll = selected
+            elif selected >= scroll + vis_h:
+                scroll = selected - vis_h + 1
+            scroll = max(0, min(scroll, max(0, data_count - vis_h)))
+
+            # Pintar datos comenzando en y=4
+            for i, line in enumerate(data_lines[scroll:scroll + vis_h]):
+                y = 4 + i
+                attr = curses.A_NORMAL
+
+                # marcar sospechosos en negrita PARA QUE SE VEA CLARAMENTE
+                if data_count:
+                    data_idx = scroll + i
+                    try:
+                        if int(filtered[data_idx][SUSP] or 0) == 1:
+                            attr |= curses.A_BOLD
+                    except Exception:
+                        pass
+                    if data_idx == selected:
+                        attr |= curses.A_REVERSE
+
                 self.win.addstr(y, 2, line[:max_x - 4], attr)
+
 
             self.win.refresh()
             k = self.win.getch()
-
-            if k == curses.KEY_UP and data_count:
-                selected = (selected - 1) % max(1, data_count)
-            elif k == curses.KEY_DOWN and data_count:
-                selected = (selected + 1) % max(1, data_count)
-            elif k in (10, 13):
-                if filtered:
-                    row = filtered[selected]
-                    detail = _detail_from_row(headers, row, max(20, width), transforms={3: _human_start_type, 4: _human_service_type})
-                    reason = suspicious_reason(row)
-                    if reason:
-                        detail += f"\n\nSospechoso: {reason}"
-                    _show_scrollable_popup(self.win, detail, title="Detalle: Servicio")
-
+            if k == curses.KEY_UP and data_count > 0:
+                selected = (selected - 1) % data_count
+            elif k == curses.KEY_DOWN and data_count > 0:
+                selected = (selected + 1) % data_count
+            elif k in (10, 13) and filtered:
+                row = filtered[selected]
+                detail = _detail_from_row(headers_detail, row, max(20, width), transforms=transforms_detail)
+                _show_scrollable_popup(self.win, detail, title="Detalle: Servicio")
             elif k in (27, ord('q')):
                 self.layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Abrir sección")
                 return
 
-            # ---- filtros / toggles ----
+            # ---- toggles / filtros ----
             elif k == ord('f'):
                 s = self._readline("Buscar (q): ")
                 if s is not None:
                     query = s.strip()
             elif k == ord('c'):
                 query = ""
-
-            # start type toggles
             elif k == ord('a'):
                 start_filters ^= {"Auto"} if "Auto" in start_filters else {"Auto"}
             elif k == ord('m'):
                 start_filters ^= {"Manual"} if "Manual" in start_filters else {"Manual"}
             elif k == ord('d'):
                 start_filters ^= {"Disabled"} if "Disabled" in start_filters else {"Disabled"}
-            elif k == ord('y'):  # system
+            elif k == ord('y'):
                 start_filters ^= {"System"} if "System" in start_filters else {"System"}
             elif k == ord('b'):
                 start_filters ^= {"Boot"} if "Boot" in start_filters else {"Boot"}
             elif k == ord('x'):
                 start_filters.clear()
-
-            # type filters
             elif k == ord('k'):
-                if "kernel" in type_filters:
-                    type_filters.remove("kernel")
-                else:
-                    type_filters.add("kernel")
+                type_filters.symmetric_difference_update({"kernel"})
             elif k == ord('w'):
-                if "win32" in type_filters:
-                    type_filters.remove("win32")
-                else:
-                    type_filters.add("win32")
+                type_filters.symmetric_difference_update({"win32"})
             elif k == ord('t'):
                 type_filters.clear()
-
-            # others
             elif k == ord('p'):
                 only_with_path = not only_with_path
             elif k == ord('v'):
-                only_svchost = True
-                hide_svchost = False
+                only_svchost, hide_svchost = True, False
             elif k == ord('V'):
-                hide_svchost = True
-                only_svchost = False
+                hide_svchost, only_svchost = True, False
             elif k == ord('u'):
-                suspicious_only = not suspicious_only
+                suspicious_only = not suspicious_only 
             elif k == ord('o'):
                 sort_mode = (sort_mode + 1) % 3
             elif k == ord('r'):
@@ -829,6 +748,7 @@ class SystemArtifactsViewer(Renderizable):
                 hide_svchost = False
                 suspicious_only = False
                 sort_mode = 0
+
 
 
 def visualizar_artefactos_sistema(db_path):
