@@ -112,7 +112,7 @@ def recorrer_archivos_recursivo(cursor, fs_info, dir_obj, parent_path, partition
             continue
 
 def calcular_hash_E01(ruta_E01, algoritmo="sha256", buffer_size=65536):
-    return "hola"
+    #return "hola"
     """
     Calcula el hash de un archivo .E01 (EWF).
     
@@ -147,13 +147,14 @@ def calcular_hash_E01(ruta_E01, algoritmo="sha256", buffer_size=65536):
     return hash_obj.hexdigest()
 
 
+
 def digestE01(e01_path, stdscr, db_path, case_name, case_dir):
     
 
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    insertar_case_info(cursor, case_name, e01_path, calcular_hash_E01(e01_path,"sha256"))
+    insertar_case_info(cursor, case_name, e01_path, calcular_hash_E01(e01_path,"sha256"), calcular_hash_E01(e01_path,"md5"))
     conn.commit()
 
     image = open_e01_image(e01_path)

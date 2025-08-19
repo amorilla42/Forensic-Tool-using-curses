@@ -3,7 +3,7 @@ from .renderizable import Renderizable
 from utils.text_sanitizer import TextSanitizer
 
 class FileViewerPanel(Renderizable):
-    def __init__(self, metadata: dict, content_lines: list[str], win=None):
+    def __init__(self, metadata: dict, content_lines: list[str], win=None, on_key_v=None):
         super().__init__(win)
         self.metadata = metadata
         self.content_lines = content_lines
@@ -12,6 +12,7 @@ class FileViewerPanel(Renderizable):
         self.right_scroll_y = 0
         self.right_scroll_x = 0
         self.left_scroll_x = 0  # Desplazamiento horizontal para metadatos
+        self.on_key_v = on_key_v 
         
         if metadata:
             self.metadatamaslarga = max(max(len(str(k)) for k in metadata.keys()), max(len(str(k)) for k in metadata.values())) # Longitud máxima de la clave en metadatos
@@ -30,7 +31,11 @@ class FileViewerPanel(Renderizable):
         while True:
             key = self.win.getch()
             redraw = False
-
+            
+            if key in (ord('v'), ord('V')):
+                if callable(self.on_key_v):
+                    self.on_key_v()
+                redraw = True   
             if key == 9:  # Tab
                 self.active_win = "right" if self.active_win == "left" else "left"
                 redraw = True

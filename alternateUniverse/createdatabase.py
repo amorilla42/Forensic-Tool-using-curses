@@ -41,9 +41,6 @@ def crear_base_de_datos(path_db):
         ctime DATETIME,
         crtime DATETIME,
         sha256 TEXT,
-        is_deleted BOOLEAN DEFAULT 0,
-        is_carved BOOLEAN DEFAULT 0,
-        is_suspicious BOOLEAN DEFAULT 0,
         FOREIGN KEY (partition_id) REFERENCES partition_info(partition_id)
     );
 
@@ -162,16 +159,15 @@ def insertar_partition_info(cursor, case_id, partition_offset, fs_type, label,
 
 
 def insertar_filesystem_entry(cursor, partition_id, full_path, name, extension, tipo, size,
-                              inode, mtime=None, atime=None, ctime=None, crtime=None, sha256=None,
-                              is_deleted=False, is_carved=False, is_suspicious=False):
+                              inode, mtime=None, atime=None, ctime=None, crtime=None, sha256=None):
     cursor.execute("""
     INSERT INTO filesystem_entry (
         partition_id, full_path, name, extension, type, size, inode,
-        mtime, atime, ctime, crtime, sha256, is_deleted, is_carved, is_suspicious
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        mtime, atime, ctime, crtime, sha256
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         partition_id, full_path, name, extension, tipo, size, inode,
-        mtime, atime, ctime, crtime, sha256, is_deleted, is_carved, is_suspicious
+        mtime, atime, ctime, crtime, sha256
     ))
     return cursor.lastrowid
 

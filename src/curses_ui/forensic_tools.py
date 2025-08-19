@@ -162,9 +162,11 @@ class ForensicTools:
         cursor = conn.cursor()
         cursor.execute("SELECT hash_sha256 FROM case_info WHERE case_name = ?", (self.nombre_caso,))
         case_hash_sha256 = cursor.fetchone()
+        case_hash_md5 = cursor.execute("SELECT hash_md5 FROM case_info WHERE case_name = ?", (self.nombre_caso,)).fetchone()
         conn.close()
 
         case_hash_sha256 = case_hash_sha256[0] if case_hash_sha256 else "—"
+        case_hash_md5 = case_hash_md5[0] if case_hash_md5 else "—"
         # Construye ayuda dinámica con datos del caso
         nombre = self.nombre_caso or "—"
         caso_dir = self.caso_dir or "—"
@@ -190,6 +192,7 @@ class ForensicTools:
     - Base de datos: {db_path}
     - Imagen E01 donde se extrae la informacion: {e01}
     - Hash SHA256 de la imagen .E01: {case_hash_sha256}
+    - Hash MD5 de la imagen .E01: {case_hash_md5}
 
     ESTRUCTURA DEL CASO
     {caso_dir}

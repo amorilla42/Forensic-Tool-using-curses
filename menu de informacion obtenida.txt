@@ -11,7 +11,7 @@ Visualizacion del contenido y metadatos de todo tipo de archivos
 Visualizacion recursiva de archivos de registro, explorando subclaves, claves y mostrando los metadatos
 Exportacion de claves de registro a voluntad para posterior analisis
 Calculo de hash de todos los archivos del sistema
-Verificacion de archivos maliciosos usando la API de virustotal a voluntad del usuario
+Verificacion de archivos maliciosos usando la API de virustotal a voluntad del usuario en la busqueda de archivos
 
 
 ARTEFACTOS DEL SISTEMA EXTRAIDOS Y QUE SE MUESTRAN EN LAS DISTINTAS PANTALLAS
@@ -27,6 +27,7 @@ INFORMACION DEL SISTEMA
     Componentes de Windows instalados
     Apps instaladas
     Evaluación de Integridad de svchost_groups
+    Particiones de disco
 Informacion de usuarios locales del sistema
     Artefactos de usuarios
             Programas ejecutados (Menú Inicio)
@@ -43,25 +44,18 @@ Informacion de usuarios locales del sistema
     Extracción y Cracking de Credenciales de Usuario usando hashcat y el diccionario rockyou.txt
     EXTRACCION DE ARCHIVOS INTERESANTES DE TODO EL SISTEMA: pdfs, fotos, emails, archivos borrados, .doc, .txt, archivos comprimidos, etc.
 
+QUE SE CALCULE EL HASH256 DEL .E01 Y EL MD5 Y QUE SE MUESTRE EN EL MENU DEL F1
 
 
 
 -------------------------------------POR HACER------------------------------------
 
-INTEGRACION DE VIRUSTOTAL en archivos interesantes??? y en busqueda tambien
 
-arreglar extraccion de registros que fallan al crear un caso nuevo
 
 ya se extrae hashes de mail en archivos interesantes, mostrarlo de alguna forma
 
 NUEVA VENTANA DE AYUDA COMPLETAR CON COSAS NUEVAS/REVISAR
 
-QUE SE CALCULE EL HASH256 DEL .E01 Y EL MD5 Y QUE SE MUESTRE EN EL MENU DEL F1
-
-MOSTRAR HASH DE LOS ARCHIVOS CUANDO LE DAS A VER INFO DEL ARCHIVO PORDENTRO Y SALEN LOS METADATOS A LA IZQUIERDA
-
 TABLAS NO USADAS/RELLENADAS:
-        run_mru
-        run_once_entries
-        traynotify_executables
-        partition_info
+        run_mru (no hay datos de win+R en la muestra)(rellenar datos mockup)
+        traynotify_executables (rellenar con datos mockup)

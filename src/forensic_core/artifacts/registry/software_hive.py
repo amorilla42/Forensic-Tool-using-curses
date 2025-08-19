@@ -32,15 +32,6 @@ def extraer_software(software_path, db_path):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Eliminar todas las tablas existentes
-    cursor.execute("DROP TABLE IF EXISTS system_info2;")
-    cursor.execute("DROP TABLE IF EXISTS installed_programs;")
-    cursor.execute("DROP TABLE IF EXISTS startup_entries;")
-    cursor.execute("DROP TABLE IF EXISTS run_once_entries;")
-    cursor.execute("DROP TABLE IF EXISTS installed_components;")
-    cursor.execute("DROP TABLE IF EXISTS app_paths;")
-    cursor.execute("DROP TABLE IF EXISTS app_paths_meta;")
-    cursor.execute("DROP TABLE IF EXISTS svchost_groups;")
 
     # Crear tabla de información del sistema
     cursor.execute("""
@@ -71,14 +62,6 @@ def extraer_software(software_path, db_path):
     );
     """)
 
-
-    # Tabla para RunOnce
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS run_once_entries (
-        name TEXT,
-        command TEXT
-    );
-    """)
 
     # Tabla para Active Setup Installed Components
     cursor.execute("""
@@ -118,15 +101,6 @@ def extraer_software(software_path, db_path):
     );
     """)
 
-    # Borrar todo el contenido de las tablas
-    cursor.execute("DELETE FROM system_info2;")
-    cursor.execute("DELETE FROM installed_programs;")
-    cursor.execute("DELETE FROM startup_entries;")
-    cursor.execute("DELETE FROM run_once_entries;")
-    cursor.execute("DELETE FROM installed_components;")
-    cursor.execute("DELETE FROM app_paths;")
-    cursor.execute("DELETE FROM app_paths_meta;") 
-    cursor.execute("DELETE FROM svchost_groups;")
 
 
 
@@ -188,13 +162,7 @@ def extraer_software(software_path, db_path):
     except Exception as e:
         print("[!] Error extrayendo entradas de inicio:", e)
 
-    # RunOnce entries
-    try:
-        run_once = reg.open("Microsoft\\Windows\\CurrentVersion\\RunOnce")
-        for v in run_once.values():
-            cursor.execute("INSERT INTO run_once_entries VALUES (?, ?)", (v.name(), v.value()))
-    except Exception as e:
-        print("[!] Error extrayendo RunOnce:", e)
+
 
     # Installed Components (Active Setup)
     try:

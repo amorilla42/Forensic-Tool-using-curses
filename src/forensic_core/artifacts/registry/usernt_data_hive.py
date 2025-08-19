@@ -184,6 +184,13 @@ def extraer_ntuser_artefactos(ntuser_path, db_path):
     );
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS startup_entries (
+        name TEXT,
+        command TEXT
+    );
+    """)
+
 
     conn.commit()
 
@@ -243,6 +250,22 @@ def extraer_ntuser_artefactos(ntuser_path, db_path):
                 cursor.execute("INSERT INTO run_mru VALUES (?, ?, ?)", (val.name(), val.value(), username))
     except Exception as e:
         print(f"[!] Error extrayendo RunMRU: {e}")
+
+    # RUN entries del usuario actual
+    try:
+        run_key = reg.open(r"Software\Microsoft\Windows\CurrentVersion\Run")
+        for v in run_key.values():
+            name = str(v.name())
+            cmd  = v.value()
+            # normalizar comillas si vienen "C:\ruta\app.exe"
+            if isinstance(cmd, str) and len(cmd) > 1 and cmd[0] == cmd[-1] == '"':
+                cmd = cmd[1:-1]
+            cursor.execute("INSERT INTO startup_entries (name, command) VALUES (?, ?)", (name, str(cmd)))
+    except Registry.RegistryKeyNotFoundException:
+        pass
+    except Exception as e:
+        print(f"[!] Error extrayendo HKCU Run: {e}")
+
 
     # MOUNTPOINTS2
     try:

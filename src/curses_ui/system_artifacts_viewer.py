@@ -5,6 +5,25 @@ import textwrap
 from .renderizable import Renderizable
 from curses_ui.awesome_layout import AwesomeLayout
 
+def _fmt_size_short(n):
+    try:
+        n = int(n)
+    except Exception:
+        return ""
+    units = ["B","KB","MB","GB","TB","PB"]
+    x = float(n); i = 0
+    while x >= 1024 and i < len(units)-1:
+        x /= 1024.0; i += 1
+    return f"{int(x)} {units[i]}" if i == 0 else f"{x:.1f} {units[i]}"
+
+def _fmt_bytes_full(n):
+    try:
+        n = int(n)
+    except Exception:
+        return ""
+    return f"{n} bytes (0x{n:X}) — {_fmt_size_short(n)}"
+
+
 
 def _wrap(text, width):
     return textwrap.fill("" if text is None else str(text), width)
@@ -224,6 +243,32 @@ def fmt_power_schemes(rows, width):
         out.append(f"{_recortar(s,w1):<{w1}}│ {_recortar(f,w2):<{w2}}")
     return "\n".join(out)
 
+def fmt_partitions(rows, width):
+    # rows: (description, fs_type, label, start_offset, length, partition_offset, block_size, block_count, case_name, partition_id)
+    w1 = int(width*0.26)  # Descripción
+    w2 = int(width*0.08)  # FS
+    w3 = int(width*0.16)  # Label
+    w4 = int(width*0.16)  # Inicio
+    w5 = int(width*0.16)  # Tamaño
+    w6 = width - (w1 + w2 + w3 + w4 + w5 + 8)  # Offset (lo que quede de width)
+
+    out = []
+    head = f"{'Descripción':<{w1}}│ {'FS':<{w2}}│ {'Etiqueta':<{w3}}│ {'Inicio(Sector)':<{w4}}│ {'Tamaño':<{w5}}│ {'Offset':<{w6}}"
+    out.append(head); out.append("─"*len(head))
+
+    for desc, fs, label, start_off, _length, part_off, block_sz, block_cnt, *_ in rows:
+        try:
+            calc_size = int(block_sz or 0) * int(block_cnt or 0)
+        except Exception:
+            calc_size = 0
+
+        out.append(
+            f"{_recortar(desc, w1):<{w1}}│ {_recortar(fs, w2):<{w2}}│ {_recortar(label, w3):<{w3}}│ "
+            f"{_recortar(start_off, w4):<{w4}}│ {_recortar(_fmt_size_short(calc_size), w5):<{w5}}│ "
+            f"{_recortar(_fmt_size_short(part_off), w6):<{w6}}"
+        )
+    return "\n".join(out)
+
 
 class SystemArtifactsViewer(Renderizable):
     def __init__(self, win, db_path, layout):
@@ -235,7 +280,6 @@ class SystemArtifactsViewer(Renderizable):
             "Información del sistema",
             "Programas instalados",
             "Inicio automático (Run)",
-            "RunOnce",
             "Active Setup (Installed Components)",
             "App Paths (resumen)",
             "App Paths (metadatos)",
@@ -244,7 +288,8 @@ class SystemArtifactsViewer(Renderizable):
             "Último arranque",
             "Servicios",
             "Dispositivos USB",
-            "Perfiles de energía"
+            "Perfiles de energía",
+            "Particiones (disco)"
         ]
         self.selected = 0
 
@@ -301,15 +346,6 @@ class SystemArtifactsViewer(Renderizable):
             )
 
         elif idx == 3:
-            rows = _fetch_all(self.db_path, "SELECT name, command FROM run_once_entries ORDER BY name")
-            self._interactive_table(
-                "SOFTWARE: RunOnce",
-                rows,
-                lambda r: fmt_runonce(r, width),
-                headers=["Nombre", "Comando"]
-            )
-
-        elif idx == 4:
             rows = _fetch_all(self.db_path,
                 "SELECT component_id, stub_path, version, is_installed, component_name FROM installed_components ORDER BY component_id")
             self._interactive_table(
@@ -319,7 +355,7 @@ class SystemArtifactsViewer(Renderizable):
                 headers=["ComponentID", "StubPath", "Version", "IsInstalled", "Nombre"]
             )
 
-        elif idx == 5:
+        elif idx == 4:
             rows = _fetch_all(self.db_path, "SELECT executable, path FROM app_paths ORDER BY executable")
             self._interactive_table(
                 "SOFTWARE: App Paths (resumen)",
@@ -328,7 +364,7 @@ class SystemArtifactsViewer(Renderizable):
                 headers=["Ejecutable", "Ruta"]
             )
 
-        elif idx == 6:
+        elif idx == 5:
             rows = _fetch_all(self.db_path,
                 "SELECT executable, value_name, value_data, key_path, timestamp FROM app_paths_meta ORDER BY executable, value_name")
             self._interactive_table(
@@ -338,7 +374,7 @@ class SystemArtifactsViewer(Renderizable):
                 headers=["Exe", "Valor", "Dato", "Clave", "Timestamp"]
             )
 
-        elif idx == 7:
+        elif idx == 6:
             rows = _fetch_all(self.db_path, "SELECT group_name, services FROM svchost_groups ORDER BY group_name")
             def _svchost_detail(row, w):
                 grupo, servicios = row
@@ -364,16 +400,16 @@ class SystemArtifactsViewer(Renderizable):
             )
 
         # --- SYSTEM ---
-        elif idx == 8:
+        elif idx == 7:
             rows = _fetch_all(self.db_path, "SELECT last_boot_time FROM system_info ORDER BY id DESC LIMIT 1")
             table = fmt_system_lastboot(rows, width)
             _show_scrollable_popup(self.win, table, "SYSTEM: Último arranque")
             return
 
-        elif idx == 9:
+        elif idx == 8:
             self._services_browser()
 
-        elif idx == 10:
+        elif idx == 9:
             rows = _fetch_all(self.db_path,
                 "SELECT device_class, device_id, friendly_name, device_desc FROM usb_devices ORDER BY device_class, device_id")
             self._interactive_table(
@@ -383,7 +419,7 @@ class SystemArtifactsViewer(Renderizable):
                 headers=["Clase", "ID", "Nombre", "Descripción"]
             )
 
-        elif idx == 11:
+        elif idx == 10:
             rows = _fetch_all(self.db_path,
                 "SELECT scheme_name, friendly_name FROM power_schemes ORDER BY scheme_name")
             self._interactive_table(
@@ -392,6 +428,60 @@ class SystemArtifactsViewer(Renderizable):
                 lambda r: fmt_power_schemes(r, width),
                 headers=["Esquema", "Nombre legible"]
             )
+
+        elif idx == 11:  # Particiones (disco)
+            rows = _fetch_all(
+                self.db_path,
+                """
+                SELECT
+                    description,
+                    fs_type,
+                    label,
+                    start_offset,
+                    length,
+                    partition_offset,
+                    block_size,
+                    block_count,
+                    case_name,
+                    partition_id
+                FROM partition_info
+                ORDER BY start_offset
+                """
+            )
+
+            def _partition_detail(row, w):
+                desc, fs, label, start_off, length, part_off, block_sz, block_cnt, case_name, part_id = row
+                try:
+                    calc_size = int(block_sz or 0) * int(block_cnt or 0)
+                except Exception:
+                    calc_size = 0
+
+                parts = [
+                    f"Descripción:\n{_wrap(desc, w)}",
+                    f"FS:\n{_wrap(fs, w)}",
+                    f"Etiqueta:\n{_wrap(label, w)}",
+                    f"Sector de Inicio:\n{_wrap(start_off, w)}",
+                    f"Tamaño (calculado = block_size × block_count):\n{_wrap(_fmt_bytes_full(calc_size), w)}",
+                    f"Tamaño en sectores:\n{_wrap(length, w)}",
+                ]
+
+                parts.extend([
+                    f"Offset de partición:\n{_wrap(_fmt_bytes_full(part_off), w)}",
+                    f"Tamaño de bloque:\n{_wrap(_fmt_bytes_full(block_sz), w)}",
+                    f"Número de bloques:\n{_wrap(block_cnt, w)}",
+                    f"Caso:\n{_wrap(case_name, w)}",
+                    f"Partition ID:\n{_wrap(part_id, w)}",
+                ])
+                return "\n\n".join(parts)
+
+            self._interactive_table(
+                "SYSTEM: Particiones / Volúmenes",
+                rows,
+                lambda r: fmt_partitions(r, width),
+                headers=None,                 # usamos detalle personalizado
+                custom_detail_fn=_partition_detail
+            )
+
 
     def _interactive_table(self, title, full_rows, formatter, headers=None, transforms=None, custom_detail_fn=None):
         self.layout.change_footer(" ↑/↓: Navegar  ENTER: Detalle  q/ESC: Volver ")

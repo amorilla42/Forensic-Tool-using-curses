@@ -223,12 +223,6 @@ def extraer_system(db_path, hive_path):
             );
         """)
 
-        # Limpiar tablas antes de insertar nuevos datos
-        cursor.execute("DELETE FROM system_info WHERE entry_id = ?", (entry_id,))
-        cursor.execute("DELETE FROM system_services WHERE entry_id = ?", (entry_id,))
-        cursor.execute("DELETE FROM usb_devices WHERE entry_id = ?", (entry_id,))
-        cursor.execute("DELETE FROM power_schemes WHERE entry_id = ?", (entry_id,))
-
 
 
         # Insertar datos

@@ -11,7 +11,8 @@ def crear_base_de_datos(path_db):
         case_name TEXT NOT NULL,
         e01_path TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        hash_sha256 TEXT NOT NULL
+        hash_sha256 TEXT NOT NULL,
+        hash_md5 TEXT NOT NULL
     );
 
     -- Tabla de particiones encontradas
@@ -44,9 +45,6 @@ def crear_base_de_datos(path_db):
         ctime DATETIME,
         crtime DATETIME,
         sha256 TEXT,
-        is_deleted BOOLEAN DEFAULT 0,
-        is_carved BOOLEAN DEFAULT 0,
-        is_suspicious BOOLEAN DEFAULT 0,
         FOREIGN KEY (partition_id) REFERENCES partition_info(partition_id)
     );
 
@@ -75,10 +73,8 @@ def crear_base_de_datos(path_db):
     -- Índices para rendimiento
     CREATE INDEX IF NOT EXISTS idx_full_path ON filesystem_entry(full_path);
     CREATE INDEX IF NOT EXISTS idx_extension ON filesystem_entry(extension);
-    CREATE INDEX IF NOT EXISTS idx_deleted ON filesystem_entry(is_deleted);
     CREATE INDEX IF NOT EXISTS idx_mtime ON filesystem_entry(mtime);
     CREATE INDEX IF NOT EXISTS idx_crtime ON filesystem_entry(crtime);
-    CREATE INDEX IF NOT EXISTS idx_suspicious ON filesystem_entry(is_suspicious);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_hash_sha256 ON file_hash(sha256);
     CREATE INDEX IF NOT EXISTS idx_timeline_time ON unified_timeline(timestamp);
     """)
@@ -86,11 +82,11 @@ def crear_base_de_datos(path_db):
     conn.commit()
     conn.close()
 
-def insertar_case_info(cursor, case_name, e01_path, hash_sha256):
+def insertar_case_info(cursor, case_name, e01_path, hash_sha256, hash_md5):
     cursor.execute("""
-    INSERT INTO case_info (case_name, e01_path, hash_sha256)
-    VALUES (?, ?, ?)
-    """, (case_name, e01_path, hash_sha256))
+    INSERT INTO case_info (case_name, e01_path, hash_sha256, hash_md5)
+    VALUES (?, ?, ?, ?)
+    """, (case_name, e01_path, hash_sha256, hash_md5))
     return cursor.lastrowid
 
 
@@ -105,16 +101,15 @@ def insertar_partition_info(cursor, case_id, description, start_offset, length, 
 
 
 def insertar_filesystem_entry(cursor, partition_id, full_path, name, extension, tipo, size,
-                              inode, mtime=None, atime=None, ctime=None, crtime=None, sha256=None,
-                              is_deleted=False, is_carved=False, is_suspicious=False):
+                              inode, mtime=None, atime=None, ctime=None, crtime=None, sha256=None):
     cursor.execute("""
     INSERT INTO filesystem_entry (
         partition_id, full_path, name, extension, type, size, inode,
-        mtime, atime, ctime, crtime, sha256, is_deleted, is_carved, is_suspicious
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        mtime, atime, ctime, crtime, sha256
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         partition_id, full_path, name, extension, tipo, size, inode,
-        mtime, atime, ctime, crtime, sha256, is_deleted, is_carved, is_suspicious
+        mtime, atime, ctime, crtime, sha256
     ))
     return cursor.lastrowid
 

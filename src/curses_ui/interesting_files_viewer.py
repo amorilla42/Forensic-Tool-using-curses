@@ -406,6 +406,12 @@ def _mostrar_info_extra(file_path, db_path):
     ).fetchone()[0]
     cursor.execute("SELECT e01_path FROM case_info")
     path = cursor.fetchall()
+    sha_row = cursor.execute(
+        "SELECT sha256, size FROM filesystem_entry WHERE entry_id = ?",
+        (selected_file[0],)
+    ).fetchone()
+    sha256_db = sha_row[0] if sha_row else None
+    size_db   = sha_row[1] if sha_row else None
     conn.close()
     layout=AwesomeLayout()
     layout.render()
@@ -418,6 +424,16 @@ def _mostrar_info_extra(file_path, db_path):
             path=selected_file[2],
             layout=layout
         )
+
+    if sha256_db and str(sha256_db).strip():
+        metadata["SHA-256"] = str(sha256_db).strip()
+    else:
+        if (size_db == 0) or (size_db is None and selected_file[6] == 0):
+            metadata["SHA-256"] = "— (no calculado: tamaño 0 bytes)"
+        else:
+            metadata["SHA-256"] = "— (no disponible)"
+
+
     FileViewerPanel(metadata, content_lines, layout.body_win).render()
     layout.change_header("Artefactos interesantes encontrados")
     layout.change_footer("ESC: Salir, ↑/↓: Navegar, ENTER: Ver archivos, i: Ver información extra de un archivo")
