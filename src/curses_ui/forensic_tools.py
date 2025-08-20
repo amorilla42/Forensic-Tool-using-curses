@@ -224,6 +224,10 @@ class ForensicTools:
             options=["1. Crear nuevo caso", "2. Abrir caso existente"]
         ).render()
 
+        if selected_option is None:
+            self.ui.stdscr.clear()
+            self.ui.stdscr.refresh()
+            return
         if selected_option == 0:
             self.new_case()
         elif selected_option == 1:
