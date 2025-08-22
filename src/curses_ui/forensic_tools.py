@@ -36,8 +36,6 @@ class ForensicTools:
         layout.change_header("Introduce el nombre del caso")
         layout.change_footer("Presiona ESC para salir")
 
-        
-        #self.nombre_caso = AwesomeInput(layout.body_win).render()
 
         nombre = AwesomeInput(layout.body_win, prompt=" Nombre del caso ", default_text="").render()
 
@@ -54,7 +52,7 @@ class ForensicTools:
         layout.change_footer("↑/↓ mover  ENTER abrir/seleccionar   ESC cancelar")
 
         selected = file_browser(layout.body_win, start_path=self.caso_dir, wanted_ext=".E01")
-        #self.e01_path = "/home/desmo/Escritorio/TFG/Forensic-Tool-using-curses/alternateUniverse/portatil.E01"
+
         
         if not selected:
             # Cancelado
@@ -181,14 +179,9 @@ class ForensicTools:
     F1  Ayuda                   (muestra esta ventana)
     F2  Usuarios                (información de usuarios extraídos del SAM y descifrado de contraseñas)
     F3  Visualizar Registros    (registros del sistema, eventos, etc.)
-    F5  Buscar                  (archivos por nombre, tipo, etc.)
-    F6  Artefactos de usuarios  (archivos interesantes clasificados por usuario, historial de busqueda de mavegador, etc.)
+    F4  Buscar                  (archivos por nombre, tipo, etc.)
+    F5  Artefactos de usuarios  (archivos interesantes clasificados por usuario, historial de busqueda de mavegador, etc.)
     ESC Salir
-
-    FLUJO BÁSICO
-    1) Crear/abrir caso
-    2) Indexar imagen (.E01) si es nuevo
-    3) Explorar: Usuarios / Registros / Búsqueda / Artefactos
 
     INFORMACION DEL CASO (actual)
     - Caso: {nombre}
