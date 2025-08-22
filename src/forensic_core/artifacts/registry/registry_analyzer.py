@@ -48,8 +48,7 @@ def exportar_hives_sistema(db_path, caso_dir):
         cursor.execute("SELECT * FROM filesystem_entry WHERE type !='dir' AND full_path LIKE ?", ('%' + hive_path,))
         results = cursor.fetchall()
         if not results:
-            continue
-        #TODO: LA BASE DE DATOS LAS PARTICIONES ESTAN CON ID 1 MENOS DE LO QUE DEBERIA
+            continue#TODO: LA BASE DE DATOS LAS PARTICIONES ESTAN CON ID 1 MENOS DE LO QUE DEBERIA
         partition_offset_sectors = cursor.execute(
             "SELECT partition_offset from partition_info WHERE partition_id = ?", (results[0][1]+1,)
         ).fetchone()[0]

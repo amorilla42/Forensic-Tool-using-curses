@@ -82,7 +82,7 @@ def extraer_software(software_path, db_path):
     );
     """)
 
-    # (opcional) Metadatos de App Paths: todos los valores del subkey
+    # Metadatos de App Paths: todos los valores del subkey
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS app_paths_meta (
         executable TEXT,

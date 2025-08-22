@@ -1,6 +1,4 @@
-import curses
 from curses import wrapper
-import sys
 from curses_ui.forensic_tools import ForensicTools
 from curses_ui.ui_handler import UIHandler
 

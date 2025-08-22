@@ -7,8 +7,7 @@ import pytsk3 # type: ignore
 import pyewf
 
 
-from curses_ui.select_partition import select_partition
-from database.create_database import crear_base_de_datos, insertar_file_hash, insertar_filesystem_entry, insertar_timeline_event, insertar_partition_info, insertar_case_info
+from database.create_database import insertar_file_hash, insertar_filesystem_entry, insertar_timeline_event, insertar_partition_info, insertar_case_info
 from forensic_core.artifact_extractor import extraer_artefactos
 
 
@@ -224,48 +223,4 @@ def digestE01(e01_path, stdscr, db_path, case_name, case_dir):
         stdscr.refresh()
         stdscr.getch()
 
-    """
-    for i, partition in enumerate(volume_info):
-        
-            offset = partition.start * 512
-            fs_info = abrir_fs_con_particion(image, offset,stdscr)
-            if fs_info is not None:
-                selectedvalid = True
-                break
-    stdscr.refresh()
-    """
 
-
-"""
-def digestE01(e01_path, stdscr, db_path):
-    
-    image = open_e01_image(e01_path)
-    
-    volume_info = pytsk3.Volume_Info(image)
-
-    selectedvalid = False
-    partitions = []
-    partitions_strings = []
-  
-    for i, partition in enumerate(volume_info):
-        partitions.append((i+1, partition))
-        partitions_strings.append(f"Partición {i+1}: {partition.desc.decode()}, Offset: {partition.start * 512} bytes, Lenght :({partition.len} bytes)")
-
-    if not partitions:
-        stdscr.addstr(0, 0, "No se encontraron particiones válidas.")
-        stdscr.refresh()
-        stdscr.getch()
-    
-    while(not selectedvalid and partitions):
-        seleccion = select_partition(stdscr, partitions_strings)
-        
-        for i, partition in enumerate(volume_info):
-            if i == seleccion:
-                offset = partition.start * 512
-                fs_info = abrir_fs_con_particion(image, offset,stdscr)
-                if fs_info is not None:
-                    selectedvalid = True
-                    break
-        stdscr.refresh()
-    return fs_info, seleccion, offset
-"""

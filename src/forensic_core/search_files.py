@@ -107,7 +107,7 @@ def vt_query_and_format(sha256, api_key):
         if len(mal) > 10:
             lines.append(f"  ... y {len(mal)-10} más")
 
-    # URL del informe web (por si quieres abrirla fuera)
+    # URL del informe web de VirusTotal
     lines.append("")
     lines.append(f"Informe web: https://www.virustotal.com/gui/file/{sha256}")
 
@@ -140,7 +140,6 @@ def search_files(db_path, case_dir):
         layout.clear()
         return
 
-    # TODO: MEJORAR LA BUSQUEDA QUE COMPARE Y HAGA BUSQUEDA EN TODOS LOS CAMPOS DE FILESISTEM_ENTRY
     cursor.execute("SELECT * FROM filesystem_entry WHERE type !='dir' AND full_path LIKE ?", ('%' + query + '%',))
     results = cursor.fetchall()
     conn.close()
@@ -166,7 +165,7 @@ def search_files(db_path, case_dir):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        #TODO LA BASE DE DATOS LAS PARTICIONES ESTAN CON ID 1 MENOS DE LO QUE DEBERIA
+        #LA BASE DE DATOS LAS PARTICIONES ESTAN CON ID 1 MENOS
         cursor.execute("SELECT block_size FROM partition_info WHERE partition_id = ?", (selected_file[1]+1,))
         block_size = cursor.fetchone()[0]
 

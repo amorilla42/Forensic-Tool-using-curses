@@ -1,4 +1,3 @@
-import time
 from .renderizable import Renderizable
 
 class CircleLoader(Renderizable):

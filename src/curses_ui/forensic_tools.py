@@ -40,7 +40,7 @@ class ForensicTools:
         #self.nombre_caso = AwesomeInput(layout.body_win).render()
 
         nombre = AwesomeInput(layout.body_win, prompt=" Nombre del caso ", default_text="").render()
-        
+
         if nombre is None:
             # Cancelado con ESC
             import sys
@@ -58,6 +58,7 @@ class ForensicTools:
         
         if not selected:
             # Cancelado
+            layout.body_win.clear()
             layout.change_header("Operación cancelada")
             layout.change_footer("Pulsa cualquier tecla para volver")
             layout.body_win.getch()
@@ -75,6 +76,9 @@ class ForensicTools:
         self.db_path = os.path.join(self.caso_dir, f"{self.nombre_caso}.db")
         crear_base_de_datos(self.db_path)
 
+        layout.change_header("Montando y analizando imagen .E01, por favor espera...")
+        layout.change_footer("")
+        layout.body_win.clear()
         # mostrar que esta cargando
         x = CircleLoader(layout.body_win)
         x.render()
@@ -237,7 +241,7 @@ class ForensicTools:
 
         while True:
             self.ui.draw_header("ANALIZADOR FORENSE E01")
-            self.ui.draw_footer("F1: Ayuda | F2: Usuarios | F3: Visualizar Registros | F5: Buscar | F6: Artefactos | ESC: Salir")       
+            self.ui.draw_footer("F1: Ayuda | F2: Usuarios | F3: Visualizar Registros | F4: Buscar | F5: Artefactos | ESC: Salir")       
 
             key = self.ui.stdscr.getch()
             if key == 27: # Escape key
@@ -250,11 +254,11 @@ class ForensicTools:
                 self._show_help()
             elif key == curses.KEY_F2:
                 visualizar_usuarios(self.db_path)
-            elif key == ord('a'):    #####curses.KEY_F3:
+            elif key == curses.KEY_F3:
                 registry_analyzer(self.db_path, self.caso_dir)
-            elif key == curses.KEY_F5:
+            elif key == curses.KEY_F4:
                 search_files(self.db_path, self.caso_dir)
-            elif key == ord('c'): #####curses.KEY_F6:
+            elif key == curses.KEY_F5:
                 artifact_menu(self.db_path, self.caso_dir)
             else:
                 self.ui.stdscr.addstr(0, 0, "Tecla no válida. Presiona ESC para salir.")

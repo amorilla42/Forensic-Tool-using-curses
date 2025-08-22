@@ -96,27 +96,6 @@ def extraer_system(db_path, hive_path):
             return dt.strftime('%Y-%m-%d %H:%M:%S')
         return None
 
-   
-    def get_system_info_data(db_path):
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT last_boot_time FROM system_info ORDER BY id DESC LIMIT 1")
-        row = cursor.fetchone()
-        metadata = {"last_boot_time": row[0] if row else "N/A"}
-
-        cursor.execute("SELECT service_name, display_name, image_path, start_type, service_type FROM system_services")
-        services = [f"{s[0]} ({s[1]}) - {s[2]} [start={s[3]}, type={s[4]}]" for s in cursor.fetchall()]
-
-        cursor.execute("SELECT device_class, device_id, friendly_name, device_desc FROM usb_devices")
-        usb_devices = [f"{d[0]} | {d[1]} | {d[2]} | {d[3]}" for d in cursor.fetchall()]
-
-        cursor.execute("SELECT scheme_name, friendly_name FROM power_schemes")
-        power = [f"{p[0]} - {p[1]}" for p in cursor.fetchall()]
-
-        conn.close()
-        return metadata, services, usb_devices, power
-
 
     try:
         reg = Registry.Registry(hive_path)
