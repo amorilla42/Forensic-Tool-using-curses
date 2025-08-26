@@ -242,8 +242,6 @@ def seleccionar_analizar_registros(layout, archivos, db_path, dir_temp, dir_expo
 
 
 def registry_analyzer(db_path, caso_dir):
-    #exportar_hives_sistema(db_path, caso_dir)
-    #exportar_hives_usuario(db_path, caso_dir)
     dir_temp = os.path.join(caso_dir, BASE_DIR_EXPORT_TEMP)
     dir_exportar = os.path.join(caso_dir, BASE_DIR_EXPORT)
     layout = AwesomeLayout()
@@ -258,20 +256,7 @@ def registry_analyzer(db_path, caso_dir):
             layout.body_win.refresh()
             layout.body_win.getch()
             break
-        
-        menu = AwesomeMenu(title="Seleccione accion", options=["Analisis de registros","Visualizar contenido de registros"], win=layout.body_win)
-        selected_option = menu.render()
-        if selected_option is None:
-            layout.body_win.clear()
-            layout.body_win.refresh()
-            break
-        # mostrar reporte de analisis de registros
-        if selected_option == 0:
-            res = 0#seleccionar_analizar_registros(layout, archivos, db_path, dir_temp, dir_exportar)
-
-        # visualizar contenido de registros
-        elif selected_option == 1:
-            res = seleccionar_visualizar_registros(layout, archivos, dir_exportar)
+        res = seleccionar_visualizar_registros(layout, archivos, dir_exportar)
 
         if res == "exit":
             break
