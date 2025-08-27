@@ -8,7 +8,7 @@ def file_browser(win, start_path, wanted_ext=".E01", title=" Selecciona el archi
     - ENTER: entrar en dir / seleccionar archivo
     - '.' y '..' para permanecer/subir
     - ESC o 'q' para cancelar (devuelve None)
-    - Muestra solo archivos con la extensión wanted_ext (case-insensitive)
+    - Muestra solo archivos con la extensión wanted_ext
     """
     def list_entries(path):
         try:

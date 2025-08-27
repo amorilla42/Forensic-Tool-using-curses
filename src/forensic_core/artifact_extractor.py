@@ -178,7 +178,8 @@ def exportar_historial_firefox(db_path, caso_dir):
             url TEXT,
             title TEXT,
             visit_count INTEGER,
-            last_visit_date INTEGER
+            last_visit_date INTEGER,
+            FOREIGN KEY(username) REFERENCES users(username)
         )
     """)
     conn.commit()

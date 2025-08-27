@@ -189,55 +189,6 @@ def seleccionar_visualizar_registros(layout, archivos, dir_exportar):
             return "exit"
         visualizar_hive(dir_exportar, archivos[selected_option])
 
-    
-
-def analizar_hive(layout, archivo, db_path, dir_temp):
-    #system path
-    if os.path.isfile(os.path.join(dir_temp, "SYSTEM")):
-        systempath = os.path.join(dir_temp, "SYSTEM")
-    else:
-        systempath = ""
-    layout.body_win.refresh()
-
-    if archivo.endswith("SYSTEM") or archivo.endswith("system"):
-        extraer_system(db_path, archivo) 
-        pass
-    elif archivo.endswith("SOFTWARE"):
-        extraer_software(archivo, db_path)
-    elif archivo.endswith("SAM"):
-        if not systempath:
-            layout.body_win.addstr(1, 0, "No se encontró el archivo SYSTEM necesario para analizar SAM.")
-            layout.body_win.refresh()
-            layout.body_win.getch()
-            return
-        extraer_sam(sam_hive_path = archivo, system_hive_path = systempath, db_path = db_path)
-        pass
-    elif archivo.endswith("NTUSER.DAT"):
-        extraer_ntuser_artefactos(archivo, db_path)
-        pass
-    elif archivo.endswith("USRCLASS.DAT"):
-        extraer_usrclass(archivo, db_path, "Jimmy Wilson")
-        pass
-    elif archivo.endswith(".hive"):
-        pass
-
-def seleccionar_analizar_registros(layout, archivos, db_path, dir_temp, dir_exportar):
-        visualizar_resumen_usuarios(db_path, dir_exportar)
-        while True:
-            layout.render()
-            layout.change_header("Analizador de Registros del Sistema")
-            layout.change_footer("Presiona ESC para salir")
-
-            menu = AwesomeMenu(title="Seleccione el archivo de registro", options=archivos, win=layout.body_win)
-            selected_option = menu.render()
-            if selected_option is None:
-                layout.body_win.clear()
-                layout.body_win.refresh()
-                return "exit"
-            analizar_hive(layout, archivos[selected_option], db_path, dir_temp)
-
-           
-    
 
 
 
